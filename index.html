@@ -295,11 +295,12 @@ let overTimer = 0, initials = '', lastEntryIdx = -1, scorePop = 0, displayScore 
 let bonusCount = 0, bonus = null;
 
 function quota() { return 10 + level * 3; }
-// secondi per arrivare a terra. SPEED_MULT = 2: le sfere scendono al doppio della velocità fin da subito;
-// il minimo di 2 secondi evita che i livelli alti diventino impossibili
-const SPEED_MULT = 2;
-function lifeFor() { return Math.max(2, (9 - (level - 1) * 1.1 - (sub - 1) * 0.3) / SPEED_MULT); }
-function spawnInterval() { return Math.max(0.35, 1.5 - (level - 1) * 0.18 - (sub - 1) * 0.05) * (COMPACT ? 1.15 : 1); }
+// secondi per arrivare a terra. SPEED_MULT = 2.6: le sfere scendono molto più veloci fin dal primo livello;
+// il minimo di 1,8 secondi evita che i livelli alti diventino impossibili
+const SPEED_MULT = 2.6;
+function lifeFor() { return Math.max(1.8, (9 - (level - 1) * 1.1 - (sub - 1) * 0.3) / SPEED_MULT); }
+// secondi tra una sfera e l'altra: già al primo livello ne arriva circa una al secondo
+function spawnInterval() { return Math.max(0.35, 1.0 - (level - 1) * 0.12 - (sub - 1) * 0.04) * (COMPACT ? 1.15 : 1); }
 function specialChance() { return Math.min(0.25, 0.08 + (level - 1) * 0.03 + (sub - 1) * 0.01); }
 function miniLife() { return Math.max(1.8, 3.2 - (level - 1) * 0.25); }
 function bonusTime() { return Math.max(25, 50 - (bonusCount - 1) * 6); }
