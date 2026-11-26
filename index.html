@@ -501,7 +501,7 @@ canvas.addEventListener('pointerdown', e => {
   ac();
   if (state !== 'play') return;
   const p = pt(e);
-  if (p.y < HUD_H) { state = 'pause'; ignoreUp = true; return; }   // tocco sulla barra in alto = pausa
+  if (p.y < HUD_H || onPauseBtn(p.x, p.y)) { state = 'pause'; ignoreUp = true; return; }   // pulsante pausa o barra in alto
   tapAt(p.x, p.y, e.pointerType === 'mouse' ? 3 : 12);
 });
 canvas.addEventListener('pointerup', e => {
@@ -815,6 +815,25 @@ function drawCannons() {
   }
 }
 
+
+// ---------- pulsante pausa (in alto a destra, sotto i punteggi) ----------
+function pauseBtn() {
+  const top = HUD_H;
+  return { x: W - 26, y: top + 26, r: 18 };
+}
+const onPauseBtn = (px, py) => { const b = pauseBtn(); return Math.hypot(px - b.x, py - b.y) <= b.r + 12; };
+function drawPauseBtn() {
+  if (state !== 'play' && state !== 'pause') return;
+  const b = pauseBtn();
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  if (state === 'pause') { ctx.beginPath(); ctx.moveTo(b.x - 5, b.y - 8); ctx.lineTo(b.x + 8, b.y); ctx.lineTo(b.x - 5, b.y + 8); ctx.fill(); }
+  else { ctx.fillRect(b.x - 7, b.y - 8, 5, 16); ctx.fillRect(b.x + 2, b.y - 8, 5, 16); }
+  ctx.restore();
+}
+
 function hudBox(x, y, w, h, border) {
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   roundRect(x, y, w, h, 12); ctx.fill();
@@ -1001,6 +1020,7 @@ function draw(time) {
   }
   ctx.restore();
   drawOverlay(time);
+  drawPauseBtn();
 }
 
 let last = performance.now();
