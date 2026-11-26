@@ -195,12 +195,12 @@ function resize() {
   FS = Math.max(16, Math.min(26, Math.round(Math.min(W / 55, H / 32))));
   BIG_R = clamp(Math.min(W, H) * 0.075, 30, 56);
   LR = Math.max(9, Math.round(BIG_R * 0.3));
-  ROWS = COMPACT ? 2 : 1;
+  ROWS = 1;                                  // una sola fila a terra, anche su telefono
   GROUND_H = ROWS * (LR * 2 + 6) + 22;
   HUD_H = (COMPACT || H < 620) ? 36 : 96;
   if (oldW && typeof balls !== 'undefined') {
     const kx = W / oldW, ky = (H - GROUND_H) / oldGround;
-    for (const b of balls) { b.x *= kx; b.y *= ky; b.vy *= ky; b.vx = (b.vx || 0) * kx; b.r = b.kind === 'ball' ? radiusFor(b.size) : b.kind === 'mini' ? miniR() : bubbleR(); }
+    for (const b of balls) { b.x *= kx; b.y *= ky; b.vy *= ky; if (b.g) b.g *= ky; b.vx = (b.vx || 0) * kx; b.r = b.kind === 'ball' ? radiusFor(b.size) : b.kind === 'mini' ? miniR() : bubbleR(); }
   }
 }
 addEventListener('resize', resize);
@@ -268,6 +268,7 @@ const vibrate = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catc
 
 const R = (a, b) => a + Math.random() * (b - a);
 const sfx = {
+  cannon: () => { noise(0.18, 180, 0.8, 0.5, 0, 'lowpass'); tone(90, 0.15, 'triangle', 0.1, 0, -40); },
   pop: s => { tone(300 + s * 220, 0.12, 'sine', 0.14, 0, 500 + s * 300); noise(0.06, 1800 + s * 900, 1.2, 0.35); },
   mini: () => { tone(R(900, 1250), 0.07, 'square', 0.04, 0, 500); noise(0.04, 3500, 2, 0.2); },
   special: () => { [880, 1175, 1568, 2093].forEach((f, i) => tone(f, 0.14, 'triangle', 0.07, i * 0.05)); noise(0.1, 2500, 1, 0.3); },
@@ -294,13 +295,18 @@ let score = 0, level = 1, sub = 1, cleared = 0, spawnTimer = 0, poppedCount = 0,
 let overTimer = 0, initials = '', lastEntryIdx = -1, scorePop = 0, displayScore = 0;
 let bonusCount = 0, bonus = null;
 
-function quota() { return 10 + level * 3; }
+function quota() { return 14 + level * 4; }
 // secondi per arrivare a terra. SPEED_MULT = 2.6: le sfere scendono molto più veloci fin dal primo livello;
 // il minimo di 1,8 secondi evita che i livelli alti diventino impossibili
 const SPEED_MULT = 2.6;
 function lifeFor() { return Math.max(1.8, (9 - (level - 1) * 1.1 - (sub - 1) * 0.3) / SPEED_MULT); }
 // secondi tra una sfera e l'altra: già al primo livello ne arriva circa una al secondo
-function spawnInterval() { return Math.max(0.35, 1.0 - (level - 1) * 0.12 - (sub - 1) * 0.04) * (COMPACT ? 1.15 : 1); }
+function spawnInterval() { return Math.max(0.5, 1.0 - (level - 1) * 0.12 - (sub - 1) * 0.04) * (COMPACT ? 1.15 : 1); }
+// quante sfere escono insieme: 2 al primo livello, poi 2-3, 3, 3-4, dal quinto 4
+function groupSize() { return level === 1 ? 2 : level === 2 ? 2 + Math.round(Math.random()) : level === 3 ? 3 : level === 4 ? 3 + Math.round(Math.random()) : 4; }
+// cannoncini: dal 2° livello dal basso, dal 4° anche dal centro dei lati
+const CANNONS_BOTTOM = [0.15, 0.5, 0.85];
+let cannonFlash = {};
 function specialChance() { return Math.min(0.25, 0.08 + (level - 1) * 0.03 + (sub - 1) * 0.01); }
 function miniLife() { return Math.max(1.8, 3.2 - (level - 1) * 0.25); }
 function bonusTime() { return Math.max(25, 50 - (bonusCount - 1) * 6); }
@@ -311,24 +317,46 @@ function bonusSpeed() { return (120 + (bonusCount - 1) * 40) * Math.min(W, H) / 
 function newGame() {
   balls = []; landed = []; particles = []; floaters = [];
   score = 0; displayScore = 0; level = 1; sub = 1; cleared = 0; poppedCount = 0; shake = 0;
-  spawnTimer = 0.4; mode = 'normal'; bonusCount = 0; bonus = null;
+  spawnTimer = 0.4; mode = 'normal'; bonusCount = 0; bonus = null; cannonFlash = {};
   banner = { text: 'LIVELLO 1-1', sub: THEMES[0].name, t: 2.2 };
   state = 'play';
   sfx.level();
 }
 
-function spawnBall() {
+function spawnGroup() {
+  const n = groupSize();
+  for (let i = 0; i < n; i++) {
+    const roll = Math.random();
+    const src = level >= 4 && roll < 0.2 ? 'side' : level >= 2 && roll < 0.5 ? 'bottom' : 'top';
+    spawnBall(src);
+  }
+}
+function spawnBall(src = 'top') {
   const x = Math.random();
   const size = x < 0.45 ? 0 : x < 0.8 ? 1 : 2;
   const r = radiusFor(size);
   const special = size !== 2 && Math.random() < specialChance();
   const life = lifeFor() * R(0.85, 1.15) * (size === 2 ? 0.9 : 1);
-  const y0 = -r;
-  balls.push({
-    kind: 'ball', size, r, special, x: R(r, W - r), y: y0, vx: 0,
-    vy: (groundY() - r - y0) / life, phase: R(0, 6.28), sway: R(10, 35), age: 0,
-    color: BALL_COLORS[Math.floor(Math.random() * BALL_COLORS.length)], hit: 0,
-  });
+  const b = { kind: 'ball', size, r, special, phase: R(0, 6.28), sway: R(10, 35), age: 0,
+    color: BALL_COLORS[Math.floor(Math.random() * BALL_COLORS.length)], hit: 0 };
+  const gy = groundY(), top = HUD_H + r;
+  if (src === 'top') {
+    Object.assign(b, { x: R(r, W - r), y: -r, vx: 0, vy: (gy - r + r) / life });
+  } else if (src === 'bottom') {
+    // sparata dal basso: sale fino a un'altezza a caso e ricade al suolo
+    const ci = Math.floor(Math.random() * CANNONS_BOTTOM.length), T = life * R(1.0, 1.3);
+    const h = R(0.45, 0.85) * (gy - r - top);
+    Object.assign(b, { mode: 'arc', x: CANNONS_BOTTOM[ci] * W, y: gy - r - 2, g: 8 * h / (T * T), vy: -4 * h / T, vx: R(-1, 1) * W * 0.18 / T });
+    cannonFlash['b' + ci] = 0.25;
+  } else {
+    // sparata dal centro di un lato verso l'interno
+    const left = Math.random() < 0.5, T = life * R(0.9, 1.2), y0 = gy * 0.5;
+    const vy = -R(150, 380) * Math.min(W, H) / 700;
+    Object.assign(b, { mode: 'arc', x: left ? r : W - r, y: y0, vx: (left ? 1 : -1) * W * R(0.45, 0.85) / T, vy, g: 2 * (gy - r - y0 - vy * T) / (T * T) });
+    cannonFlash[left ? 'l' : 'r'] = 0.25;
+  }
+  if (src !== 'top') sfx.cannon();
+  balls.push(b);
 }
 
 function burst(x, y, color, n, speed = 240) {
@@ -352,7 +380,14 @@ function groundFill() { return Math.min(1, landed.length / rowLayout().total); }
 
 function land(b) {
   balls.splice(balls.indexOf(b), 1);
-  landed.push({ color: b.special ? '#ffffff' : b.color, x0: b.x, y0: b.y, r0: b.r, t: 0 });
+  if (b.special) {
+    // la multicolore non presa si apre a terra: ogni sferetta occupa un posto nella fila
+    const n = 3 + Math.min(3, level - 1);
+    for (let i = 0; i < n; i++) landed.push({ color: BALL_COLORS[(i * 3) % BALL_COLORS.length], x0: b.x, y0: b.y, r0: b.r * 0.5, t: 0 });
+    burst(b.x, b.y, '#ffffff', 24, 260);
+    floaters.push({ x: b.x, y: b.y - 20, text: `+${n} A TERRA!`, t: 1.2, color: '#ff5050' });
+    shake = Math.max(shake, 14);
+  } else landed.push({ color: b.color, x0: b.x, y0: b.y, r0: b.r, t: 0 });
   shake = Math.max(shake, 8);
   sfx.land();
   if (landed.length > rowLayout().total) gameOver();
@@ -417,6 +452,8 @@ function endBonus() {
   if (found === BONUS_ITEMS.length) { score += BONUS_PERFECT; scorePop = 1; msg = `PERFETTO! +${BONUS_PERFECT}`; }
   mode = 'normal'; bonus = null;
   level++; sub = 1; cleared = 0; spawnTimer = 1.5;
+  if (level === 2) msg += ' · ARRIVANO I CANNONCINI!';
+  if (level === 4) msg += ' · CANNONCINI ANCHE AI LATI!';
   banner = { text: `LIVELLO ${level}-1`, sub: msg, t: 3 };
   sfx.level();
 }
@@ -594,12 +631,19 @@ function update(dt) {
   }
 
   spawnTimer -= dt;
-  if (spawnTimer <= 0) { spawnBall(); spawnTimer = spawnInterval() * R(0.7, 1.3); }
+  if (spawnTimer <= 0) { spawnGroup(); spawnTimer = spawnInterval() * R(0.7, 1.3); }
+  for (const k in cannonFlash) cannonFlash[k] = Math.max(0, cannonFlash[k] - dt);
   const scale = Math.min(W, H) / 700;
   for (const b of [...balls]) {
     if (b.hit > 0) b.hit -= dt;
     b.age += dt;
-    if (b.kind === 'ball') {
+    if (b.kind === 'ball' && b.mode === 'arc') {
+      // traiettoria a parabola dei cannoncini
+      b.vy += b.g * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+      if (b.x < b.r) { b.x = b.r; b.vx = Math.abs(b.vx); }
+      if (b.x > W - b.r) { b.x = W - b.r; b.vx = -Math.abs(b.vx); }
+      if (b.vy > 0 && b.y + b.r >= gy) { land(b); if (state !== 'play') return; }
+    } else if (b.kind === 'ball') {
       b.y += b.vy * dt;
       b.x = clamp(b.x + Math.cos(b.age * 1.6 + b.phase) * b.sway * dt, b.r, W - b.r);
       if (b.y + b.r >= gy) { land(b); if (state !== 'play') return; }
@@ -744,6 +788,32 @@ function drawBall(b, time) {
     ctx.closePath(); ctx.fill(); ctx.stroke();
   }
   ctx.restore();
+}
+
+function drawCannon(x, y, angle, flash) {
+  const s = Math.max(18, BIG_R * 0.6);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#5a6075'; ctx.strokeStyle = '#ffffffaa'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, s * 0.75, Math.PI, 0); ctx.fill(); ctx.stroke();   // base
+  ctx.rotate(angle);
+  ctx.fillStyle = '#7a8099'; ctx.fillRect(-s * 0.35, -s * 1.6, s * 0.7, s * 1.4); ctx.strokeRect(-s * 0.35, -s * 1.6, s * 0.7, s * 1.4);   // canna
+  ctx.fillStyle = '#ffb703'; ctx.fillRect(-s * 0.4, -s * 1.7, s * 0.8, s * 0.22);   // bordo dorato
+  if (flash > 0) {
+    ctx.globalAlpha = flash * 4;
+    ctx.fillStyle = '#fff3a0'; ctx.beginPath(); ctx.arc(0, -s * 1.9, s * 0.7, 0, 6.28); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+function drawCannons() {
+  if (level < 2) return;
+  const gy = groundY();
+  CANNONS_BOTTOM.forEach((cx, i) => drawCannon(cx * W, gy, 0, cannonFlash['b' + i] || 0));
+  if (level >= 4) {
+    drawCannon(0, gy * 0.5, Math.PI / 2, cannonFlash.l || 0);
+    drawCannon(W, gy * 0.5, -Math.PI / 2, cannonFlash.r || 0);
+  }
 }
 
 function hudBox(x, y, w, h, border) {
@@ -919,6 +989,7 @@ function draw(time) {
     g.addColorStop(0, '#ffffff'); g.addColorStop(0.3, shade(l.color, 0.8)); g.addColorStop(1, shade(l.color, 0.4));
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
   });
+  if ((state === 'play' || state === 'pause' || state === 'over') && mode === 'normal') drawCannons();
   if (state !== 'title' && state !== 'board') balls.forEach(b => drawBall(b, time));
   particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); });
   ctx.globalAlpha = 1;
