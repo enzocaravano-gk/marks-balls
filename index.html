@@ -327,12 +327,16 @@ let bonusCount = 0, bonus = null;
 function quota() { return 14 + level * 4; }
 // secondi per arrivare a terra. SPEED_MULT = 2.6: le sfere scendono molto più veloci fin dal primo livello;
 // il minimo di 1,8 secondi evita che i livelli alti diventino impossibili
-const SPEED_MULT = 2.6;
+const SPEED_MULT = 2.25;   // un po' più calmo all'inizio
 function lifeFor() { return Math.max(1.8, (9 - (level - 1) * 1.1 - (sub - 1) * 0.3) / SPEED_MULT) / diff().speed; }
 // secondi tra una sfera e l'altra: già al primo livello ne arriva circa una al secondo
-function spawnInterval() { return Math.max(0.5, 1.0 - (level - 1) * 0.12 - (sub - 1) * 0.04) * (COMPACT ? 1.15 : 1) / diff().speed; }
+function spawnInterval() { return Math.max(0.5, 1.2 - (level - 1) * 0.12 - (sub - 1) * 0.04) * (COMPACT ? 1.15 : 1) / diff().speed; }
 // quante sfere escono insieme: 2 al primo livello, poi 2-3, 3, 3-4, dal quinto 4
-function groupSize() { return level === 1 ? 2 : level === 2 ? 2 + Math.round(Math.random()) : level === 3 ? 3 : level === 4 ? 3 + Math.round(Math.random()) : 4; }
+// quante sfere escono insieme: 1-2 al primo livello, poi crescono fino a 4
+const coin = () => Math.round(Math.random());
+function groupSize() { return level === 1 ? 1 + coin() : level === 2 ? 2 : level === 3 ? 2 + coin() : level === 4 ? 3 : level === 5 ? 3 + coin() : 4; }
+// in quante microsfere si divide la multicolore: 2 nei primi livelli, poi una in più ogni 2 livelli (massimo 6)
+const splitCount = () => Math.min(6, 2 + Math.floor((level - 1) / 2));
 // cannoncini: dal 2° livello dal basso, dal 4° anche dal centro dei lati
 const CANNONS_BOTTOM = [0.15, 0.5, 0.85];
 let cannonFlash = {};
@@ -412,7 +416,7 @@ function land(b) {
   balls.splice(balls.indexOf(b), 1);
   if (b.special) {
     // la multicolore non presa si apre a terra: ogni sferetta occupa un posto nella fila
-    const n = 3 + Math.min(3, level - 1);
+    const n = splitCount();
     for (let i = 0; i < n; i++) landed.push({ color: BALL_COLORS[(i * 3) % BALL_COLORS.length], x0: b.x, y0: b.y, r0: b.r * 0.5, t: 0 });
     burst(b.x, b.y, '#ffffff', 24, 260);
     floaters.push({ x: b.x, y: b.y - 20, text: `+${n} A TERRA!`, t: 1.2, color: '#ff5050' });
@@ -435,7 +439,7 @@ function pop(b) {
   floaters.push({ x: b.x, y: b.y, text: '+' + pts, t: 1, color: b.special ? '#ffe066' : b.color });
   if (b.special) {
     // sfera speciale: si divide in sferette piccole e veloci che durano meno
-    const n = 3 + Math.min(3, level - 1), sp = (280 + level * 30) * Math.min(W, H) / 700;
+    const n = splitCount(), sp = (280 + level * 30) * Math.min(W, H) / 700;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * 6.28 + R(-0.3, 0.3);
       balls.push({ kind: 'mini', r: miniR(), x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, age: 0, life: miniLife() * R(0.85, 1.15),
