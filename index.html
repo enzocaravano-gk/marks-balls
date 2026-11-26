@@ -790,18 +790,17 @@ function drawBall(b, time) {
   ctx.restore();
 }
 
+// cannoncini quasi invisibili: si vede solo il bordino dorato della bocca (e il lampo quando sparano)
 function drawCannon(x, y, angle, flash) {
-  const s = Math.max(18, BIG_R * 0.6);
+  const s = Math.max(16, BIG_R * 0.5);
   ctx.save();
   ctx.translate(x, y);
-  ctx.fillStyle = '#5a6075'; ctx.strokeStyle = '#ffffffaa'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(0, 0, s * 0.75, Math.PI, 0); ctx.fill(); ctx.stroke();   // base
   ctx.rotate(angle);
-  ctx.fillStyle = '#7a8099'; ctx.fillRect(-s * 0.35, -s * 1.6, s * 0.7, s * 1.4); ctx.strokeRect(-s * 0.35, -s * 1.6, s * 0.7, s * 1.4);   // canna
-  ctx.fillStyle = '#ffb703'; ctx.fillRect(-s * 0.4, -s * 1.7, s * 0.8, s * 0.22);   // bordo dorato
+  ctx.fillStyle = '#ffb703';
+  ctx.fillRect(-s * 0.4, -s * 0.35, s * 0.8, s * 0.22);
   if (flash > 0) {
     ctx.globalAlpha = flash * 4;
-    ctx.fillStyle = '#fff3a0'; ctx.beginPath(); ctx.arc(0, -s * 1.9, s * 0.7, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#fff3a0'; ctx.beginPath(); ctx.arc(0, -s * 0.6, s * 0.6, 0, 6.28); ctx.fill();
     ctx.globalAlpha = 1;
   }
   ctx.restore();
