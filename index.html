@@ -285,6 +285,7 @@ const sfx = {
   slash: () => { noise(0.08, 4000, 1.5, 0.3, 0, 'highpass'); tone(R(1300, 1700), 0.06, 'square', 0.03, 0, -400); },
   boom: () => { noise(0.9, 120, 0.7, 0.9, 0, 'lowpass'); tone(55, 0.7, 'sine', 0.25, 0, -30); vibrate([60, 40, 120]); },
   broom: () => { noise(0.4, 1500, 0.6, 0.4); [523, 784, 1046].forEach((f, i) => tone(f, 0.1, 'triangle', 0.06, 0.1 + i * 0.07)); },
+  slow: () => [880, 740, 587, 440, 330].forEach((f, i) => tone(f, 0.22, 'sine', 0.07, i * 0.09, -60)),
   free: () => { tone(523, 0.1, 'triangle', 0.08); tone(1046, 0.16, 'triangle', 0.08, 0.08); },
   over: () => { [400, 300, 200, 120].forEach((f, i) => tone(f, 0.3, 'sawtooth', 0.06, i * 0.22)); vibrate([80, 60, 200]); },
 };
@@ -404,28 +405,33 @@ let queued = [];
 //  POTENZIAMENTI (dal 2° livello) — arrivano quando la situazione si complica
 //  SPADA: per 10 secondi strisci il dito e le sfere toccate esplodono
 //  BOMBA: toccata, fa esplodere tutte le sfere in campo
-//  SCOPA: libera posti nella fila a terra (2, dal 6° livello 3)
+//  SCOPA: libera 2 posti nella fila a terra
+//  CLESSIDRA (dal 3° livello): per 6 secondi tutto scende al rallentatore
 //  Scendono più lente; se cadono a terra spariscono senza entrare nella fila.
 // =====================================================================
 const POWERS = {
   spada: { emoji: '⚔️', name: 'SPADA', color: '#7fd3ff' },
   bomba: { emoji: '💣', name: 'BOMBA', color: '#ff7a59' },
   scopa: { emoji: '🧹', name: 'SCOPA', color: '#7CF5C4' },
+  clessidra: { emoji: '⏳', name: 'CLESSIDRA', color: '#ffd38a' },
 };
+const SLOW_TIME = 6, SLOW_K = 0.35;   // clessidra: 6 secondi a circa un terzo della velocità
+let slowT = 0, slowK = 1;
 const POWER_GAP = 25;          // secondi minimi tra un potenziamento e l'altro
 const SWORD_TIME = 10;
 let powerCd = 0, swordT = 0, swordTrail = [], swordDown = false, swordLast = null, flashT = 0;
 const scopaCount = () => 2;
 function wantPower() {
-  if (level < 2 || powerCd < POWER_GAP || balls.some(b => b.kind === 'power') || swordT > 0) return false;
+  if (level < 2 || powerCd < POWER_GAP || balls.some(b => b.kind === 'power') || swordT > 0 || slowT > 0) return false;
   const inField = balls.filter(b => b.kind === 'ball').length;
   return groundFill() >= 0.4 || inField >= 6;
 }
 function pickPower() {
   // fila quasi piena: più probabile la scopa; tante sfere in campo: spada o bomba
-  if (!landed.length) return Math.random() < 0.5 ? 'spada' : 'bomba';
-  const pScopa = groundFill() >= 0.6 ? 0.6 : 0.2, x = Math.random();
-  return x < pScopa ? 'scopa' : x < pScopa + (1 - pScopa) / 2 ? 'spada' : 'bomba';
+  const others = level >= 3 ? ['spada', 'bomba', 'clessidra'] : ['spada', 'bomba'];
+  const pScopa = !landed.length ? 0 : groundFill() >= 0.6 ? 0.6 : 0.2;
+  if (Math.random() < pScopa) return 'scopa';
+  return others[Math.floor(Math.random() * others.length)];
 }
 function spawnPower() {
   const type = pickPower(), r = BIG_R * 0.85, gy = groundY();
@@ -450,6 +456,10 @@ function usePower(b) {
       if (state !== 'play' || mode !== 'normal') return;
     }
     floaters.push({ x: W / 2, y: H * 0.35, text: 'BOOM!', t: 1.2, color: '#ff7a59' });
+  } else if (b.type === 'clessidra') {
+    slowT = SLOW_TIME;
+    banner = { text: 'RALLENTATORE!', sub: 'TUTTO SCENDE PIANO PER 6 SECONDI', t: 1.6 };
+    sfx.slow();
   } else {
     const n = Math.min(scopaCount(), landed.length);
     for (let i = 0; i < n; i++) {
@@ -486,7 +496,7 @@ function newGame(startLv) {
   score = 0; displayScore = 0; level = 1; sub = 1; cleared = 0; poppedCount = 0; shake = 0;
   spawnTimer = 0.4; mode = 'normal'; bonusCount = 0; bonus = null; cannonFlash = {};
   waveT = 0; assist = 1; calmT = 0; combo = 0; bestCombo = 0; queued = [];
-  powerCd = 0; swordT = 0; swordTrail = []; flashT = 0;
+  powerCd = 0; swordT = 0; swordTrail = []; flashT = 0; slowT = 0; slowK = 1;
   level = startLv || diff().start;
   banner = { text: `LIVELLO ${level}-1`, sub: startLv ? `RIPARTENZA - ${sceneNameFor(level)}` : `${diff().name} - ${sceneNameFor(level)}`, t: 2.4 };
   state = 'play';
@@ -646,7 +656,7 @@ function bonusIntro() {
   landed.forEach((l, i) => { const p = landedPos(i); burst(p.x, p.y, l.color, 8, 160); });
   balls.forEach(b => burst(b.x, b.y, b.color, 8, 160));
   landed = []; balls = []; queued = [];
-  banner = null; introT = 0; state = 'bonusIntro'; swordT = 0; swordTrail = [];
+  banner = null; introT = 0; state = 'bonusIntro'; swordT = 0; swordTrail = []; slowT = 0; slowK = 1;
   sfx.level();
 }
 function goBonus() { if (introT < 0.8) return; state = 'play'; startBonus(); }   // breve attesa: evita di partire per sbaglio mentre si tocca
@@ -882,6 +892,12 @@ function update(dt) {
     return;
   }
 
+  // clessidra: per qualche secondo tutto il gioco rallenta (passaggio morbido); il suo timer e quello della spada vanno a tempo vero
+  const realDt = dt;
+  if (slowT > 0) { slowT = Math.max(0, slowT - realDt); if (slowT === 0) floaters.push({ x: W / 2, y: H * 0.3, text: 'TEMPO NORMALE', t: 1, color: '#ffd38a' }); }
+  slowK += ((slowT > 0 ? SLOW_K : 1) - slowK) * Math.min(1, realDt * 6);
+  dt *= slowK;
+
   // onde: pressione che cresce, poi un respiro senza nuove sfere
   waveT += dt;
   if (waveT > WAVE_PUSH + waveBreath()) waveT = 0;
@@ -892,7 +908,7 @@ function update(dt) {
   for (const q of [...queued]) { q.t -= dt; if (q.t <= 0) { queued.splice(queued.indexOf(q), 1); q.fn(); } }
   // potenziamenti
   powerCd += dt;
-  if (swordT > 0) { swordT = Math.max(0, swordT - dt); if (swordT === 0) floaters.push({ x: W / 2, y: H * 0.3, text: 'SPADA FINITA', t: 1, color: '#7fd3ff' }); }
+  if (swordT > 0) { swordT = Math.max(0, swordT - realDt); if (swordT === 0) floaters.push({ x: W / 2, y: H * 0.3, text: 'SPADA FINITA', t: 1, color: '#7fd3ff' }); }
   if (wantPower()) spawnPower();
   // aiuto invisibile (più leggero: ora ci sono i potenziamenti)
   calmT += dt;
@@ -1740,6 +1756,17 @@ function draw(time) {
   if (state === 'play' || state === 'pause' || state === 'over' || state === 'bonusIntro') {
     drawHUD();
     if (mode === 'bonus' && bonus) drawBonusBox();
+    if (slowK < 0.99 && mode === 'normal') {
+      // velo ambrato del rallentatore
+      ctx.fillStyle = `rgba(255,190,90,${((1 - slowK) / (1 - SLOW_K) * 0.16).toFixed(3)})`; ctx.fillRect(0, HUD_H, W, groundY() - HUD_H);
+    }
+    if (slowT > 0 && mode === 'normal') {
+      const bw = Math.min(260, W * 0.6), bx = W / 2 - bw / 2, by = HUD_H + (swordT > 0 ? 46 : 10), k = slowT / SLOW_TIME;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(bx - 4, by - 4, bw + 8, 30, 10); ctx.fill();
+      text(`RALLENTATORE ${Math.ceil(slowT)}S`, W / 2, by + 7, Math.max(10, FS * 0.6), '#ffd38a');
+      ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(bx, by + 15, bw, 6);
+      ctx.fillStyle = '#ffd38a'; ctx.fillRect(bx, by + 15, bw * k, 6);
+    }
     if (swordT > 0 && mode === 'normal') {
       // tempo rimasto alla spada
       const bw = Math.min(260, W * 0.6), bx = W / 2 - bw / 2, by = HUD_H + 10, k = swordT / SWORD_TIME;

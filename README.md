@@ -12,7 +12,7 @@ Terzo gioco della serie di [Word Rain](https://github.com/enzocaravano-gk/word-r
 - Ogni livello porta una novità: cannoncini dal basso (2), più sfere piccole (3), cannoncini ai lati (4), formazioni (5), più arcobaleno (6), tutto insieme (7), gran finale (8)
 - Difficoltà "a dente di sega": i sottolivelli salgono, il livello dopo riparte un po' più calmo; dentro ogni sottolivello si alternano onde e brevi respiri
 - Combo: sfere di fila senza farne cadere moltiplicano i punti (x2 da 10, x3 da 25, x4 da 45); ogni 20 di combo si libera un posto nella fila a terra
-- Potenziamenti (dal 2° livello, quando la situazione si complica): SPADA (10 secondi per tagliare le sfere strisciando il dito), BOMBA (fa esplodere tutte le sfere in campo), SCOPA (libera 2 posti nella fila a terra)
+- Potenziamenti (dal 2° livello, quando la situazione si complica): SPADA (10 secondi per tagliare le sfere strisciando il dito), BOMBA (fa esplodere tutte le sfere in campo), SCOPA (libera 2 posti nella fila a terra), CLESSIDRA (dal 3° livello: 6 secondi di rallentatore)
 - Presa "al volo" vicino a terra: +5 punti. Se la fila è quasi piena le sfere rallentano un po'
 - Dopo il game over puoi ripartire dal livello che avevi raggiunto (pulsante nella classifica)
 - Pausa: tocca la barra in alto (telefono) oppure spazio / ESC (computer)
