@@ -1,4 +1,4 @@
-# Mark's Balls — Le palle di Marco
+# Ball's Rain — Pioggia di sfere
 
 Terzo gioco della serie di [Word Rain](https://github.com/enzocaravano-gk/word-rain) e [Mary's Number](https://github.com/enzocaravano-gk/marys-number): qui non si scrive, si tocca.
 

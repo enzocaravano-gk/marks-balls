@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>Mark's Balls</title>
+<title>Ball's Rain</title>
 <style>
   html, body {
     margin: 0; padding: 0; overflow: hidden; background: #000;
@@ -30,7 +30,7 @@
 <input id="ti" type="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" aria-label="Iniziali">
 <script>
 // =====================================================================
-//  MARK'S BALLS — Le palle di Marco: tocca le sfere prima che tocchino terra
+//  BALL'S RAIN — Pioggia di sfere: tocca le sfere prima che tocchino terra
 // =====================================================================
 
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
@@ -1424,9 +1424,9 @@ function drawOverlay(time) {
   const START = TOUCH ? 'TOCCA LO SCHERMO PER GIOCARE' : 'CLIC O INVIO PER GIOCARE';
   if (state === 'title') {
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, 0, W, H);
-    text("MARK'S", W / 2, H * 0.1, s * 3.6, '#7CF5C4');
-    text('BALLS', W / 2, H * 0.1 + s * 4.4, s * 3.6, '#ffe066');
-    text('LE PALLE DI MARCO', W / 2, H * 0.1 + s * 7.8, s * 0.9, '#ff8fd8');
+    text("BALL'S", W / 2, H * 0.1, s * 3.6, '#7CF5C4');
+    text('RAIN', W / 2, H * 0.1 + s * 4.4, s * 3.6, '#ffe066');
+    text('PIOGGIA DI SFERE', W / 2, H * 0.1 + s * 7.8, s * 0.9, '#ff8fd8');
     const y = H * 0.1 + s * 10;
     text('TOCCA LE SFERE PRIMA CHE CADANO A TERRA', W / 2, y, s * 0.75, '#fff');
     text('SE LA FILA A TERRA SI RIEMPIE, HAI PERSO', W / 2, y + s * 1.8, s * 0.75, '#fff');
