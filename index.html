@@ -277,6 +277,8 @@ const sfx = {
   found: () => { tone(1046, 0.1, 'square', 0.06); tone(1568, 0.18, 'square', 0.06, 0.08); },
   wrong: () => { tone(150, 0.2, 'sawtooth', 0.07); vibrate(40); },
   key: () => noise(0.02, 3000, 2, 0.3),
+  combo: m => [659, 880, 1175, 1568].slice(0, m).forEach((f, i) => tone(f, 0.1, 'square', 0.05, i * 0.07)),
+  free: () => { tone(523, 0.1, 'triangle', 0.08); tone(1046, 0.16, 'triangle', 0.08, 0.08); },
   over: () => { [400, 300, 200, 120].forEach((f, i) => tone(f, 0.3, 'sawtooth', 0.06, i * 0.22)); vibrate([80, 60, 200]); },
 };
 
@@ -324,50 +326,123 @@ let score = 0, level = 1, sub = 1, cleared = 0, spawnTimer = 0, poppedCount = 0,
 let overTimer = 0, initials = '', lastEntryIdx = -1, scorePop = 0, displayScore = 0;
 let bonusCount = 0, bonus = null;
 
-function quota() { return 14 + level * 4; }
-// secondi per arrivare a terra. SPEED_MULT = 2.6: le sfere scendono molto più veloci fin dal primo livello;
-// il minimo di 1,8 secondi evita che i livelli alti diventino impossibili
-const SPEED_MULT = 2.25;   // un po' più calmo all'inizio
-function lifeFor() { return Math.max(1.8, (9 - (level - 1) * 1.1 - (sub - 1) * 0.3) / SPEED_MULT) / diff().speed; }
-// secondi tra una sfera e l'altra: già al primo livello ne arriva circa una al secondo
-function spawnInterval() { return Math.max(0.5, 1.2 - (level - 1) * 0.12 - (sub - 1) * 0.04) * (COMPACT ? 1.15 : 1) / diff().speed; }
-// quante sfere escono insieme: 2 al primo livello, poi 2-3, 3, 3-4, dal quinto 4
-// quante sfere escono insieme: 1-2 al primo livello, poi crescono fino a 4
+function quota() { return 14 + Math.min(level, 8) * 4; }
+
+// =====================================================================
+//  CURVA DI DIFFICOLTÀ — "dente di sega"
+//  Dentro ogni livello i 4 sottolivelli salgono (il 4° è un mini-finale);
+//  il livello dopo riparte un po' sotto quel picco, così c'è un attimo di respiro.
+//  Il numero chiave è il CARICO: quante sfere al secondo arrivano in media.
+//  Livello 1 ≈ 1,25 → livello 8 ≈ 3,5 (una persona ne tocca bene circa 3 al secondo).
+//  Il 4° sottolivello dell'8° (Salerno) è il "giro di gloria": un po' più calmo.
+// =====================================================================
+const effSub = () => (level === 8 && sub === 4) ? 2.5 : sub;
+function stepLoad() {
+  const L = Math.min(level, 8), extra = Math.max(0, level - 8) * 0.1;   // dopo l'8° sale piano piano
+  return Math.min(4.2, 1.25 + (L - 1) * 0.28 + (effSub() - 1) * 0.15 + extra);
+}
+// secondi per arrivare a terra: da 4 al primo livello a circa 2 all'ottavo
+function lifeBase() {
+  return Math.max(1.8, 4.0 - (Math.min(level, 8) - 1) * 0.24 - (effSub() - 1) * 0.1 - Math.max(0, level - 8) * 0.05);
+}
+function lifeFor() { return lifeBase() / (diff().speed * assist); }
+
+// onde: circa 8 secondi di pressione che cresce, poi un respiro senza nuove sfere
+const WAVE_PUSH = 8;
+const waveBreath = () => sub === 4 ? 1.5 : 2.5;          // nel mini-finale si respira meno
+let waveT = 0;
+const inBreath = () => waveT > WAVE_PUSH;
+const waveMult = () => 0.85 + 0.35 * Math.min(1, waveT / WAVE_PUSH);
+// quanto aspettare dopo aver lanciato n sfere, per rispettare il carico
+function spawnDelay(n) {
+  return n / (stepLoad() * waveMult() * diff().speed * assist) * (COMPACT ? 1.15 : 1) * R(0.8, 1.2);
+}
+
+// ---------- una novità per livello ----------
+// 1 Mare: solo dall'alto · 2 Città: cannoncini dal basso · 3 Montagna: più sfere piccole
+// 4 Spazio: cannoncini ai lati · 5 Giappone: formazioni · 6 New York: più arcobaleno
+// 7 Parigi: tutto insieme · 8 Salerno: gran finale
+const NOVITA = { 2: 'ARRIVANO I CANNONCINI!', 3: 'PIU SFERE PICCOLE: MIRA!', 4: 'CANNONCINI ANCHE AI LATI!',
+  5: 'ARRIVANO LE FORMAZIONI!', 6: 'PIU SFERE ARCOBALENO!', 7: 'TUTTO INSIEME!', 8: 'GRAN FINALE!' };
 const coin = () => Math.round(Math.random());
-function groupSize() { return level === 1 ? 1 + coin() : level === 2 ? 2 : level === 3 ? 2 + coin() : level === 4 ? 3 : level === 5 ? 3 + coin() : 4; }
-// in quante microsfere si divide la multicolore: 2 nei primi livelli, poi una in più ogni 2 livelli (massimo 6)
-const splitCount = () => Math.min(6, 2 + Math.floor((level - 1) / 2));
+// quante sfere escono insieme
+function groupSize() { return level === 1 ? 1 + coin() : level === 2 ? 2 : level <= 4 ? 2 + coin() : level <= 6 ? 3 : 3 + coin(); }
+// in quante microsfere si divide la multicolore: 2 nei primi tre livelli, poi 3, poi 4 (massimo 5)
+const splitCount = () => Math.min(5, 2 + Math.floor((level - 1) / 3));
 // cannoncini: dal 2° livello dal basso, dal 4° anche dal centro dei lati
 const CANNONS_BOTTOM = [0.15, 0.5, 0.85];
 let cannonFlash = {};
-function specialChance() { return Math.min(0.25, 0.08 + (level - 1) * 0.03 + (sub - 1) * 0.01); }
+// ogni multicolore porta altre sferette da prendere: per questo la probabilità resta contenuta
+function specialChance() { return Math.min(0.18, 0.05 + (level - 1) * 0.015 + (sub - 1) * 0.005 + (level >= 6 ? 0.03 : 0)); }
+// dal 3° livello più sfere piccole (valgono di più ma servono mira)
+function pickSize() { const x = Math.random(); return level >= 3 ? (x < 0.35 ? 0 : x < 0.65 ? 1 : 2) : (x < 0.45 ? 0 : x < 0.8 ? 1 : 2); }
+function pickSource() {
+  const roll = Math.random();
+  if (level >= 7) return roll < 0.22 ? 'side' : roll < 0.55 ? 'bottom' : 'top';
+  if (level >= 4) return roll < 0.18 ? 'side' : roll < 0.48 ? 'bottom' : 'top';
+  if (level >= 2) return roll < 0.35 ? 'bottom' : 'top';
+  return 'top';
+}
+
+// ---------- aiuto invisibile ----------
+// se la fila a terra è quasi piena le sfere rallentano un po'; se giochi a lungo senza errori accelerano appena
+let assist = 1, calmT = 0;
+// ---------- combo ----------
+let combo = 0, bestCombo = 0;
+const comboMult = () => combo >= 45 ? 4 : combo >= 25 ? 3 : combo >= 10 ? 2 : 1;
+// lanci programmati (formazioni)
+let queued = [];
 function miniLife() { return Math.max(1.8, 3.2 - (level - 1) * 0.25); }
 function bonusTime() { return Math.max(25, 50 - (bonusCount - 1) * 6); }
 // nel bonus la difficoltà è riconoscere e cercare la sfera: le bolle si muovono un po' più piano (-20%)
 const BONUS_SPEED_MULT = 0.8;
 function bonusSpeed() { return (120 + (bonusCount - 1) * 40) * Math.min(W, H) / 700 * BONUS_SPEED_MULT; }
 
-function newGame() {
+function newGame(startLv) {
   balls = []; landed = []; particles = []; floaters = [];
   score = 0; displayScore = 0; level = 1; sub = 1; cleared = 0; poppedCount = 0; shake = 0;
   spawnTimer = 0.4; mode = 'normal'; bonusCount = 0; bonus = null; cannonFlash = {};
-  level = diff().start;
-  banner = { text: `LIVELLO ${level}-1`, sub: `${diff().name} - ${sceneNameFor(level)}`, t: 2.4 };
+  waveT = 0; assist = 1; calmT = 0; combo = 0; bestCombo = 0; queued = [];
+  level = startLv || diff().start;
+  banner = { text: `LIVELLO ${level}-1`, sub: startLv ? `RIPARTENZA - ${sceneNameFor(level)}` : `${diff().name} - ${sceneNameFor(level)}`, t: 2.4 };
   state = 'play';
   sfx.level();
 }
 
+// restituisce quante sfere ha lanciato
 function spawnGroup() {
+  const formChance = level >= 7 ? 0.35 : level >= 5 ? 0.25 : 0;
+  if (Math.random() < formChance) return spawnFormation();
   const n = groupSize();
-  for (let i = 0; i < n; i++) {
-    const roll = Math.random();
-    const src = level >= 4 && roll < 0.2 ? 'side' : level >= 2 && roll < 0.5 ? 'bottom' : 'top';
-    spawnBall(src);
-  }
+  for (let i = 0; i < n; i++) spawnBall(pickSource());
+  return n;
 }
-function spawnBall(src = 'top') {
-  const x = Math.random();
-  const size = x < 0.45 ? 0 : x < 0.8 ? 1 : 2;
+// formazioni (dal 5° livello): file, ventagli dal cannone centrale, pioggia in diagonale
+function spawnFormation() {
+  const kinds = level >= 2 ? ['fila', 'ventaglio', 'diagonale'] : ['fila'];
+  const k = kinds[Math.floor(Math.random() * kinds.length)];
+  if (k === 'fila') {
+    const n = 4 + coin(), size = 1, ltr = Math.random() < 0.5;
+    for (let i = 0; i < n; i++) {
+      const f = (i + 0.5) / n;
+      queued.push({ t: i * 0.12, fn: () => spawnBall('top', { x: ltr ? f : 1 - f, size }) });
+    }
+    return n;
+  }
+  if (k === 'ventaglio') {
+    const n = 4;
+    for (let i = 0; i < n; i++) queued.push({ t: i * 0.1, fn: () => spawnBall('bottom', { ci: 1, vxk: -1 + 2 * i / (n - 1), size: i % 2 ? 2 : 1 }) });
+    return n;
+  }
+  const n = 5, ltr = Math.random() < 0.5;   // diagonale: piccole, una dopo l'altra
+  for (let i = 0; i < n; i++) {
+    const f = 0.1 + 0.8 * i / (n - 1);
+    queued.push({ t: i * 0.28, fn: () => spawnBall('top', { x: ltr ? f : 1 - f, size: 2 }) });
+  }
+  return n;
+}
+function spawnBall(src = 'top', o = {}) {
+  const size = o.size ?? pickSize();
   const r = radiusFor(size);
   const special = size !== 2 && Math.random() < specialChance();
   const life = lifeFor() * R(0.85, 1.15) * (size === 2 ? 0.9 : 1);
@@ -375,12 +450,13 @@ function spawnBall(src = 'top') {
     color: BALL_COLORS[Math.floor(Math.random() * BALL_COLORS.length)], hit: 0 };
   const gy = groundY(), top = HUD_H + r;
   if (src === 'top') {
-    Object.assign(b, { x: R(r, W - r), y: -r, vx: 0, vy: (gy - r + r) / life });
+    Object.assign(b, { x: o.x !== undefined ? clamp(o.x * W, r, W - r) : R(r, W - r), y: -r, vx: 0, vy: (gy - r + r) / life });
+    if (o.x !== undefined) b.sway = 4;
   } else if (src === 'bottom') {
     // sparata dal basso: sale fino a un'altezza a caso e ricade al suolo
-    const ci = Math.floor(Math.random() * CANNONS_BOTTOM.length), T = life * R(1.0, 1.3);
+    const ci = o.ci ?? Math.floor(Math.random() * CANNONS_BOTTOM.length), T = life * R(1.0, 1.3);
     const h = R(0.45, 0.85) * (gy - r - top);
-    Object.assign(b, { mode: 'arc', x: CANNONS_BOTTOM[ci] * W, y: gy - r - 2, g: 8 * h / (T * T), vy: -4 * h / T, vx: R(-1, 1) * W * 0.18 / T });
+    Object.assign(b, { mode: 'arc', x: CANNONS_BOTTOM[ci] * W, y: gy - r - 2, g: 8 * h / (T * T), vy: -4 * h / T, vx: (o.vxk ?? R(-1, 1)) * W * (o.vxk !== undefined ? 0.3 : 0.18) / T });
     cannonFlash['b' + ci] = 0.25;
   } else {
     // sparata dal centro di un lato verso l'interno
@@ -424,6 +500,8 @@ function land(b) {
   } else landed.push({ color: b.color, x0: b.x, y0: b.y, r0: b.r, t: 0 });
   shake = Math.max(shake, 8);
   sfx.land();
+  if (combo >= 10) floaters.push({ x: W / 2, y: groundY() - 40, text: 'COMBO PERSA', t: 1, color: '#ff8a8a' });
+  combo = 0; calmT = 0;
   if (landed.length > rowLayout().total) gameOver();
 }
 
@@ -433,10 +511,24 @@ function pop(b) {
   if (b.kind === 'mini') { pts = MINI_POINTS; sfx.mini(); }
   else if (b.special) { pts = SPECIAL_POINTS; sfx.special(); }
   else { pts = POINTS[b.size]; sfx.pop(b.size); }
-  pts = withDiff(pts);
+  // combo: sfere di fila senza farne cadere nessuna
+  const prevMult = comboMult();
+  combo++; bestCombo = Math.max(bestCombo, combo);
+  const mult = comboMult();
+  // al volo: presa a un soffio da terra mentre scende
+  const gy0 = groundY(), alVolo = b.kind === 'ball' && (b.vy || 0) > 0 && b.y + b.r > gy0 - (gy0 - HUD_H) * 0.12;
+  pts = withDiff(pts) * mult + (alVolo ? withDiff(5) : 0);
   score += pts; scorePop = 1; poppedCount++;
   burst(b.x, b.y, b.special ? '#ffffff' : b.color, 12 + Math.round(b.r / 3));
-  floaters.push({ x: b.x, y: b.y, text: '+' + pts, t: 1, color: b.special ? '#ffe066' : b.color });
+  floaters.push({ x: b.x, y: b.y, text: '+' + pts + (alVolo ? ' AL VOLO!' : ''), t: 1, color: alVolo ? '#7CF5C4' : b.special ? '#ffe066' : b.color });
+  if (mult > prevMult) { floaters.push({ x: W / 2, y: H * 0.3, text: `COMBO X${mult}!`, t: 1.4, color: '#ffe066' }); sfx.combo(mult); }
+  // rimonta: ogni 10 di combo si libera un posto nella fila a terra
+  if (combo % 10 === 0 && landed.length) {
+    const p = landedPos(landed.length - 1), l = landed.pop();
+    burst(p.x, p.y, l.color, 16, 220);
+    floaters.push({ x: p.x, y: p.y - 30, text: '+1 POSTO', t: 1.2, color: '#7CF5C4' });
+    sfx.free();
+  }
   if (b.special) {
     // sfera speciale: si divide in sferette piccole e veloci che durano meno
     const n = splitCount(), sp = (280 + level * 30) * Math.min(W, H) / 700;
@@ -450,7 +542,7 @@ function pop(b) {
 }
 
 function nextSub() {
-  cleared = 0;
+  cleared = 0; waveT = 0;
   sub++;
   if (sub > SUBLEVELS) { sub = SUBLEVELS; startBonus(); return; }
   banner = { text: `LIVELLO ${level}-${sub}`, sub: `${sceneNameFor(level)} - ${THEMES[sub - 1].name}`, t: 2.2 };
@@ -465,7 +557,7 @@ function bonusBox() { const h = COMPACT ? 62 : 80, w = Math.min(380, W - 16); re
 function startBonus() {
   landed.forEach((l, i) => { const p = landedPos(i); burst(p.x, p.y, l.color, 8, 160); });
   balls.forEach(b => burst(b.x, b.y, b.color, 8, 160));
-  landed = []; balls = [];
+  landed = []; balls = []; queued = [];
   mode = 'bonus'; bonusCount++;
   const area = bonusArea(), r = bubbleR(), sp = bonusSpeed();
   BONUS_ITEMS.forEach(([emoji, name], id) => {
@@ -486,14 +578,21 @@ function endBonus() {
   let msg = `TROVATI ${found}/${BONUS_ITEMS.length}`;
   if (found === BONUS_ITEMS.length) { score += withDiff(BONUS_PERFECT); scorePop = 1; msg = `PERFETTO! +${withDiff(BONUS_PERFECT)}`; }
   mode = 'normal'; bonus = null;
-  level++; sub = 1; cleared = 0; spawnTimer = 1.5;
-  if (level === 2) msg += ' · ARRIVANO I CANNONCINI!';
-  if (level === 4) msg += ' · CANNONCINI ANCHE AI LATI!';
+  level++; sub = 1; cleared = 0; spawnTimer = 1.5; waveT = 0;
+  if (NOVITA[level]) msg += ' · ' + NOVITA[level];
   banner = { text: `LIVELLO ${level}-1 - ${sceneNameFor(level)}`, sub: msg, t: 3 };
   sfx.level();
 }
 
-function gameOver() { state = 'over'; overTimer = 0; sfx.over(); }
+function gameOver() { state = 'over'; overTimer = 0; sfx.over(); saveResume(level); }
+
+// ---------- ripartenza dal livello raggiunto (per ogni difficoltà) ----------
+const RESUME_KEY = HS_KEY + '_riparti';
+function loadResume() { try { return JSON.parse(localStorage.getItem(RESUME_KEY)) || {}; } catch (e) { return {}; } }
+function saveResume(lv) { const m = loadResume(); m[diff().key] = lv; try { localStorage.setItem(RESUME_KEY, JSON.stringify(m)); } catch (e) {} }
+const resumeLevel = () => { const lv = loadResume()[diff().key] || 0; return lv > diff().start ? lv : 0; };
+let resumeRect = null;
+const onResume = (x, y) => resumeRect && x >= resumeRect.x && x <= resumeRect.x + resumeRect.w && y >= resumeRect.y && y <= resumeRect.y + resumeRect.h;
 
 // ---------- Tocco / clic ----------
 function ballAt(x, y, pad) {
@@ -508,7 +607,10 @@ function ballAt(x, y, pad) {
 
 function tapAt(x, y, pad) {
   const b = ballAt(x, y, pad);
-  if (!b) return;
+  if (!b) {
+    if (mode === 'normal' && ballAt(x, y, pad + 26)) floaters.push({ x, y: y - 10, text: 'QUASI!', t: 0.6, color: '#ffffff' });
+    return;
+  }
   if (mode === 'bonus') {
     if (b.id === bonus.order[bonus.idx]) {
       balls.splice(balls.indexOf(b), 1);
@@ -543,6 +645,7 @@ canvas.addEventListener('pointerup', e => {
   if (ignoreUp) { ignoreUp = false; return; }
   if (state === 'title') { const r1 = canvas.getBoundingClientRect(), di = diffAt(e.clientX - r1.left, e.clientY - r1.top); if (di >= 0) { setDiff(di); return; } }
   if (state === 'pause') state = 'play';
+  else if (state === 'board' && resumeLevel() && onResume(e.clientX - canvas.getBoundingClientRect().left, e.clientY - canvas.getBoundingClientRect().top)) newGame(resumeLevel());
   else if (state === 'title' || state === 'board') newGame();
   else if (state === 'over') handleKey('Enter');
   else if (state === 'initials') { if (initials.length === 3) handleKey('Enter'); else openKeyboard(); }
@@ -554,6 +657,7 @@ function handleKey(k) {
   if (state === 'title' && k >= '1' && k <= '3') { setDiff(+k - 1); return; }
   if (state === 'title' || state === 'board') {
     if (k === 'Enter' || k === ' ') newGame();
+    else if (k === 'r' || k === 'R') { if (state === 'board' && resumeLevel()) newGame(resumeLevel()); }
     else if (state === 'title' && (k === 'c' || k === 'C')) state = 'board';
     else if (state === 'board' && k === 'Escape') state = 'title';
     return;
@@ -667,8 +771,18 @@ function update(dt) {
     return;
   }
 
-  spawnTimer -= dt;
-  if (spawnTimer <= 0) { spawnGroup(); spawnTimer = spawnInterval() * R(0.7, 1.3); }
+  // onde: pressione che cresce, poi un respiro senza nuove sfere
+  waveT += dt;
+  if (waveT > WAVE_PUSH + waveBreath()) waveT = 0;
+  if (!inBreath()) {
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) spawnTimer = spawnDelay(spawnGroup());
+  }
+  for (const q of [...queued]) { q.t -= dt; if (q.t <= 0) { queued.splice(queued.indexOf(q), 1); q.fn(); } }
+  // aiuto invisibile
+  calmT += dt;
+  const want = groundFill() >= 0.6 ? 0.85 : calmT > 20 ? 1.06 : 1;
+  assist += (want - assist) * Math.min(1, dt * 0.8);
   for (const k in cannonFlash) cannonFlash[k] = Math.max(0, cannonFlash[k] - dt);
   const scale = Math.min(W, H) / 700;
   for (const b of [...balls]) {
@@ -1243,6 +1357,10 @@ function drawHUD() {
   }
   // misuratore della fila a terra
   const fill = groundFill(), gy = groundY();
+  if (mode === 'normal' && combo >= 3) {
+    const m = comboMult(), cs = Math.max(11, FS * 0.8);
+    text(`COMBO ${combo}` + (m > 1 ? ` X${m}` : ''), 8, gy - 12 - cs / 2, cs, ['#ffffff', '#ffffff', '#7CF5C4', '#ffe066', '#ff8fd8'][m], 'left');
+  }
   ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0, gy - 6, W, 6);
   ctx.fillStyle = fill > 0.7 ? (Math.sin(performance.now() / 90) > 0 ? '#ff3b3b' : '#ffb347') : (fill > 0.4 ? '#ffb347' : '#7CF5C4');
   ctx.fillRect(0, gy - 6, W * fill, 6);
@@ -1338,7 +1456,8 @@ function drawOverlay(time) {
     text('GAME OVER', W / 2, H * 0.26, s * 3.4, '#ff3b3b');
     text(`${score}`, W / 2, H * 0.26 + s * 6, s * 3.2, '#ffe066');
     text('PUNTI', W / 2, H * 0.26 + s * 9, s, '#fff');
-    text(`SFERE ${poppedCount}   LIVELLO ${level}-${sub}`, W / 2, H * 0.26 + s * 12, s * 0.75, '#fff');
+    text(`SFERE ${poppedCount}   LIVELLO ${level}-${sub}   COMBO ${bestCombo}`, W / 2, H * 0.26 + s * 12, s * 0.75, '#fff');
+    if (resumeLevel()) text(`DOPO POTRAI RIPARTIRE DAL LIVELLO ${resumeLevel()}`, W / 2, H * 0.26 + s * 13.8, s * 0.7, '#7CF5C4');
     if (overTimer > 1 && blinkOn()) text(qualifies(score) ? 'NUOVO RECORD! TOCCA' : (TOUCH ? 'TOCCA PER CONTINUARE' : 'PREMI INVIO'), W / 2, H * 0.26 + s * 15.5, s * 1.1, '#7CF5C4');
   }
   if (state === 'initials') {
@@ -1358,6 +1477,17 @@ function drawOverlay(time) {
   if (state === 'board') {
     ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, W, H);
     drawLeaderboard(H * 0.08 + s);
+    resumeRect = null;
+    const rl = resumeLevel();
+    if (rl) {
+      const label = `RIPARTI DAL LIVELLO ${rl} - ${sceneNameFor(rl)}`, bh = s * 2.4;
+      const bw = Math.min(W - 24, textW(label, s * 0.85) + s * 2);
+      resumeRect = { x: W / 2 - bw / 2, y: H - s * 10 - bh / 2, w: bw, h: bh };
+      ctx.fillStyle = 'rgba(124,245,196,0.18)'; roundRect(resumeRect.x, resumeRect.y, bw, bh, 10); ctx.fill();
+      ctx.strokeStyle = '#7CF5C4'; ctx.lineWidth = 2; ctx.stroke();
+      text(label, W / 2, H - s * 10 + 1, s * 0.85, '#7CF5C4');
+      if (!TOUCH) text('R = RIPARTI', W / 2, H - s * 7.6, s * 0.65, '#ccc');
+    }
     if (blinkOn()) text(START, W / 2, H - s * 5, s * 1.1, '#7CF5C4');
     if (!TOUCH) text('ESC = MENU', W / 2, H - s * 2.5, s * 0.75, '#ccc');
   }
