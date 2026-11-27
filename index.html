@@ -359,9 +359,9 @@ function spawnDelay(n) {
 }
 
 // ---------- una novità per livello ----------
-// 1 Mare: solo dall'alto · 2 Città: cannoncini dal basso · 3 Montagna: più sfere piccole
-// 4 Spazio: cannoncini ai lati · 5 Giappone: formazioni · 6 New York: più arcobaleno
-// 7 Parigi: tutto insieme · 8 Salerno: gran finale
+// 1 Salerno: solo dall'alto · 2 Mare: cannoncini dal basso · 3 Roma: più sfere piccole
+// 4 Montagna: cannoncini ai lati · 5 Luna: formazioni · 6 Giappone: più arcobaleno
+// 7 New York: tutto insieme · 8 Parigi: gran finale
 const NOVITA = { 2: 'ARRIVANO I CANNONCINI!', 3: 'PIU SFERE PICCOLE: MIRA!', 4: 'CANNONCINI ANCHE AI LATI!',
   5: 'ARRIVANO LE FORMAZIONI!', 6: 'PIU SFERE ARCOBALENO!', 7: 'TUTTO INSIEME!', 8: 'GRAN FINALE!' };
 const coin = () => Math.round(Math.random());
@@ -1221,6 +1221,61 @@ function drawBackground(time) {
 
 /* ===== FINE AMBIENTAZIONI ===== */
 
+// ---------- sfondi illustrati (solo Ball's Rain) ----------
+// immagini in pixel art nella cartella sfondi/; dove manca l'immagine resta il paesaggio disegnato dal codice.
+// Il livello 3 in questo gioco è Roma (c'è l'immagine del Colosseo al posto della città generica).
+SCENES[1].name = 'ROMA';
+// in questo gioco si parte da Salerno, poi gli altri nell'ordine di sempre
+SCENES.unshift(SCENES.pop());
+const SFONDI = { 'MARE': 'mare', 'ROMA': 'roma', 'MONTAGNA': 'montagna', 'SPAZIO': 'luna',
+  'GIAPPONE': 'giappone', 'NEW YORK': 'new_york', 'PARIGI': 'parigi', 'SALERNO': 'salerno' };
+const SFONDI_IMG = {};
+for (const k in SFONDI) {
+  const im = new Image();
+  // colore del cielo in cima all'immagine: serve a prolungare il cielo sopra, sul telefono in verticale
+  im.onload = () => {
+    const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = 4;
+    const x = c.getContext('2d'); x.drawImage(im, 0, 0);
+    const d = x.getImageData(0, 0, c.width, 4).data, sum = [0, 0, 0];
+    for (let i = 0; i < d.length; i += 4) { sum[0] += d[i]; sum[1] += d[i + 1]; sum[2] += d[i + 2]; }
+    im.sky = sum.map(v => Math.round(v / (d.length / 4)));
+  };
+  im.src = `sfondi/${SFONDI[k]}.webp`; SFONDI_IMG[k] = im;
+}
+function drawBackdrop(time) {
+  const sc = SCENES[sceneIdx()], im = SFONDI_IMG[sc.name];
+  if (!im || !im.complete || !im.naturalWidth) { drawBackground(time); return; }
+  // appoggiata in basso (il muretto fa da pavimento), larga almeno quanto lo schermo e alta almeno il 58%:
+  // sul telefono in verticale i lati si tagliano poco e sopra il cielo continua con lo stesso colore
+  const k = Math.max(W / im.naturalWidth, H * 0.58 / im.naturalHeight), iw = im.naturalWidth * k, ih = im.naturalHeight * k;
+  if (ih < H) {
+    const c = im.sky || [40, 90, 220];
+    const g = ctx.createLinearGradient(0, 0, 0, H - ih);
+    g.addColorStop(0, `rgb(${c.map(v => v * 0.8 | 0).join(',')})`); g.addColorStop(1, `rgb(${c.join(',')})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H - ih + 1);
+  }
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(im, (W - iw) / 2, H - ih, iw, ih);
+  ctx.imageSmoothingEnabled = true;
+  if (!sc.space) {
+    // sottolivelli: velo caldo al tramonto, blu scuro di sera e di notte
+    const n = scNight(), w = scWarm();
+    if (w > 0.01) { ctx.fillStyle = `rgba(255,120,40,${(0.22 * w).toFixed(3)})`; ctx.fillRect(0, 0, W, H); }
+    if (n > 0.01) {
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = `rgb(${255 - 190 * n | 0},${255 - 175 * n | 0},${255 - 105 * n | 0})`; ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = n * 0.8;
+      for (const s of STARS) { ctx.globalAlpha = n * 0.8 * (0.5 + 0.5 * Math.sin(time * 2 + s.p)); ctx.fillStyle = '#fff'; ctx.fillRect(s.x * W, s.y * H * 0.5, s.r, s.r); }
+      ctx.globalAlpha = 1;
+    }
+  }
+  // fascia a terra un po' più scura, per vedere bene la fila di sfere
+  const gy = groundY();
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, gy, W, H - gy);
+  ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(0, gy, W, 3);
+}
+
 function shade(hex, f) { return rgb(hex2rgb(hex).map(v => clamp(v * f, 0, 255))); }
 
 function drawBall(b, time) {
@@ -1496,7 +1551,7 @@ function drawOverlay(time) {
 function draw(time) {
   ctx.save();
   if (shake > 0) ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
-  drawBackground(time);
+  drawBackdrop(time);
   // sfere a terra: scivolano nella fila
   landed.forEach((l, i) => {
     const p = landedPos(i), e = 1 - Math.pow(1 - l.t, 3);
