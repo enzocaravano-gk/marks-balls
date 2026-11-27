@@ -393,6 +393,7 @@ const comboMult = () => combo >= 45 ? 4 : combo >= 25 ? 3 : combo >= 10 ? 2 : 1;
 // lanci programmati (formazioni)
 let queued = [];
 function miniLife() { return Math.max(1.8, 3.2 - (level - 1) * 0.25); }
+function bonusTimeNext() { bonusCount++; const t = bonusTime(); bonusCount--; return t; }
 function bonusTime() { return Math.max(25, 50 - (bonusCount - 1) * 6); }
 // nel bonus la difficoltà è riconoscere e cercare la sfera: le bolle si muovono un po' più piano (-20%)
 const BONUS_SPEED_MULT = 0.8;
@@ -544,7 +545,7 @@ function pop(b) {
 function nextSub() {
   cleared = 0; waveT = 0;
   sub++;
-  if (sub > SUBLEVELS) { sub = SUBLEVELS; startBonus(); return; }
+  if (sub > SUBLEVELS) { sub = SUBLEVELS; bonusIntro(); return; }
   banner = { text: `LIVELLO ${level}-${sub}`, sub: `${sceneNameFor(level)} - ${THEMES[sub - 1].name}`, t: 2.2 };
   sfx.level();
 }
@@ -554,6 +555,16 @@ function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { co
 function bonusArea() { return { top: bonusBox().y + bonusBox().h + 6, bottom: groundY() }; }
 function bonusBox() { const h = COMPACT ? 62 : 80, w = Math.min(380, W - 16); return { x: W / 2 - w / 2, y: HUD_H + 6, w, h }; }
 
+// schermata di avviso: livello completato, sta per arrivare il bonus. Si parte toccando lo schermo
+let introT = 0;
+function bonusIntro() {
+  landed.forEach((l, i) => { const p = landedPos(i); burst(p.x, p.y, l.color, 8, 160); });
+  balls.forEach(b => burst(b.x, b.y, b.color, 8, 160));
+  landed = []; balls = []; queued = [];
+  banner = null; introT = 0; state = 'bonusIntro';
+  sfx.level();
+}
+function goBonus() { if (introT < 0.8) return; state = 'play'; startBonus(); }   // breve attesa: evita di partire per sbaglio mentre si tocca
 function startBonus() {
   landed.forEach((l, i) => { const p = landedPos(i); burst(p.x, p.y, l.color, 8, 160); });
   balls.forEach(b => burst(b.x, b.y, b.color, 8, 160));
@@ -645,6 +656,7 @@ canvas.addEventListener('pointerup', e => {
   if (ignoreUp) { ignoreUp = false; return; }
   if (state === 'title') { const r1 = canvas.getBoundingClientRect(), di = diffAt(e.clientX - r1.left, e.clientY - r1.top); if (di >= 0) { setDiff(di); return; } }
   if (state === 'pause') state = 'play';
+  else if (state === 'bonusIntro') goBonus();
   else if (state === 'board' && resumeLevel() && onResume(e.clientX - canvas.getBoundingClientRect().left, e.clientY - canvas.getBoundingClientRect().top)) newGame(resumeLevel());
   else if (state === 'title' || state === 'board') newGame();
   else if (state === 'over') handleKey('Enter');
@@ -686,6 +698,7 @@ function handleKey(k) {
     }
     return;
   }
+  if (state === 'bonusIntro') { if (k === 'Enter' || k === ' ') goBonus(); return; }
   if (state === 'pause') { if (k === 'Escape' || k === ' ' || k === 'Enter' || k === 'p' || k === 'P') state = 'play'; return; }
   if (state === 'play' && (k === 'Escape' || k === ' ' || k === 'p' || k === 'P')) state = 'pause';
 }
@@ -752,6 +765,7 @@ function update(dt) {
   if (banner) { banner.t -= dt; if (banner.t <= 0) banner = null; }
   landed.forEach(l => l.t = Math.min(1, l.t + dt * 3));
   if (state === 'over') overTimer += dt;
+  if (state === 'bonusIntro') introT += dt;
   if (state !== 'play') return;
 
   const gy = groundY();
@@ -1501,6 +1515,26 @@ function drawOverlay(time) {
     if (blinkOn()) text(START, W / 2, iy + s * 8.4, s * 1.1, '#ff8fd8');
     if (!TOUCH) text('C = CLASSIFICA   1 2 3 = DIFFICOLTA', W / 2, iy + s * 10.4, s * 0.7, '#ccc');
   }
+  if (state === 'bonusIntro') {
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(0.65, introT * 1.5).toFixed(2)})`; ctx.fillRect(0, 0, W, H);
+    const y = H * 0.24, pop = 1 + Math.max(0, 0.3 - introT) * 1.5;
+    text(`LIVELLO ${level}`, W / 2, y, s * 2.2 * pop, '#7CF5C4');
+    text('COMPLETATO!', W / 2, y + s * 3, s * 2.2 * pop, '#7CF5C4');
+    text('ARRIVA IL', W / 2, y + s * 7.5, s * 1.4, '#ffffff');
+    text('LIVELLO BONUS!', W / 2, y + s * 10, s * 2.6 * (1 + 0.04 * Math.sin(performance.now() / 160)), '#ffd23f');
+    // le sfere del bonus in anteprima
+    const demo = BONUS_ITEMS.slice(0, 5), br = Math.min(bubbleR(), W / 13), by = y + s * 14.5;
+    demo.forEach(([emoji], i) => {
+      const bx = W / 2 + (i - 2) * br * 2.5, bb = by + Math.sin(performance.now() / 300 + i) * 6;
+      ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(bx, bb, br, 0, 6.28); ctx.fill();
+      ctx.font = `${Math.round(br * 1.1)}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(emoji, bx, bb + 2);
+    });
+    const iy = by + br + s * 2.5;
+    text('IL RIQUADRO IN ALTO TI DICE QUALE SFERA TROVARE', W / 2, iy, s * 0.75, '#ffffff');
+    text(`HAI ${bonusTimeNext()} SECONDI - SFERA SBAGLIATA = -${BONUS_WRONG_PENALTY} SECONDI`, W / 2, iy + s * 1.8, s * 0.75, '#ff8a8a');
+    text(`TROVALE TUTTE: +${withDiff(BONUS_PERFECT)} PUNTI`, W / 2, iy + s * 3.6, s * 0.75, '#ffe066');
+    if (introT > 0.8 && blinkOn()) text(TOUCH ? 'TOCCA PER INIZIARE' : 'CLIC O INVIO PER INIZIARE', W / 2, iy + s * 7, s * 1.2, '#ff8fd8');
+  }
   if (state === 'pause') {
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
     text('PAUSA', W / 2, H * 0.42, s * 3, '#ffe066');
@@ -1566,7 +1600,7 @@ function draw(time) {
   ctx.globalAlpha = 1;
   floaters.forEach(f => { ctx.globalAlpha = Math.max(0, Math.min(1, f.t)); text(f.text, f.x, f.y, FS * 1.1, f.color); });
   ctx.globalAlpha = 1;
-  if (state === 'play' || state === 'pause' || state === 'over') {
+  if (state === 'play' || state === 'pause' || state === 'over' || state === 'bonusIntro') {
     drawHUD();
     if (mode === 'bonus' && bonus) drawBonusBox();
     drawBanner();
