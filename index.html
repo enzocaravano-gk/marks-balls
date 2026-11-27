@@ -33,6 +33,8 @@
 //  BALL'S RAIN — Pioggia di sfere: tocca le sfere prima che tocchino terra
 // =====================================================================
 
+// Safari su iPhone: se il colore di riempimento è una sfumatura (o semitrasparente) disegna le emoji come sagome.
+// Per questo prima di ogni emoji si imposta un nero pieno: le emoji a colori lo ignorano.
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 const HS_KEY = 'marksBalls_classifica';
 const HS_MAX = 10;
@@ -194,7 +196,7 @@ function resize() {
   COMPACT = W < 700;
   FS = Math.max(16, Math.min(26, Math.round(Math.min(W / 55, H / 32))));
   BIG_R = clamp(Math.min(W, H) * 0.075, 30, 56);
-  LR = Math.max(9, Math.round(BIG_R * 0.3));
+  LR = Math.max(11, Math.round(BIG_R * 0.36));   // sfere a terra un po' più grandi: la fila ha 10 posti
   ROWS = 1;                                  // una sola fila a terra, anche su telefono
   GROUND_H = ROWS * (LR * 2 + 6) + 22;
   HUD_H = (COMPACT || H < 620) ? 36 : 96;
@@ -413,7 +415,7 @@ const POWERS = {
 const POWER_GAP = 25;          // secondi minimi tra un potenziamento e l'altro
 const SWORD_TIME = 10;
 let powerCd = 0, swordT = 0, swordTrail = [], swordDown = false, swordLast = null, flashT = 0;
-const scopaCount = () => level >= 6 ? 3 : 2;
+const scopaCount = () => 2;
 function wantPower() {
   if (level < 2 || powerCd < POWER_GAP || balls.some(b => b.kind === 'power') || swordT > 0) return false;
   const inField = balls.filter(b => b.kind === 'ball').length;
@@ -559,14 +561,16 @@ function burst(x, y, color, n, speed = 240) {
 }
 
 // ---------- Fila a terra ----------
+// la fila a terra ha sempre 10 posti, su qualunque schermo (prima dipendeva dalla larghezza: 15 sul telefono, 30 sul computer)
+const GROUND_SLOTS = 10;
 function rowLayout() {
-  const d = LR * 2 + 5, cap = Math.max(1, Math.floor((W - 12) / d));
-  return { d, cap, total: cap * ROWS };
+  const d = Math.min(LR * 2 + 5, (W - 12) / GROUND_SLOTS);
+  return { d, cap: GROUND_SLOTS, total: GROUND_SLOTS * ROWS, x0: W / 2 - d * GROUND_SLOTS / 2 };
 }
 function landedPos(i) {
-  const { d, cap } = rowLayout();
+  const { d, cap, x0 } = rowLayout();
   const row = Math.floor(i / cap), col = i % cap;
-  return { x: 6 + d / 2 + col * d, y: groundY() + 11 + LR + Math.min(row, ROWS - 1) * (LR * 2 + 6) };
+  return { x: x0 + d / 2 + col * d, y: groundY() + 11 + LR + Math.min(row, ROWS - 1) * (LR * 2 + 6) };
 }
 function groundFill() { return Math.min(1, landed.length / rowLayout().total); }
 
@@ -604,8 +608,8 @@ function pop(b, noSplit = false) {
   burst(b.x, b.y, b.special ? '#ffffff' : b.color, 12 + Math.round(b.r / 3));
   floaters.push({ x: b.x, y: b.y, text: '+' + pts + (alVolo ? ' AL VOLO!' : ''), t: 1, color: alVolo ? '#7CF5C4' : b.special ? '#ffe066' : b.color });
   if (mult > prevMult) { floaters.push({ x: W / 2, y: H * 0.3, text: `COMBO X${mult}!`, t: 1.4, color: '#ffe066' }); sfx.combo(mult); }
-  // rimonta: ogni 10 di combo si libera un posto nella fila a terra
-  if (combo % 10 === 0 && landed.length) {
+  // rimonta: ogni 20 di combo si libera un posto nella fila a terra
+  if (combo % 20 === 0 && landed.length) {
     const p = landedPos(landed.length - 1), l = landed.pop();
     burst(p.x, p.y, l.color, 16, 220);
     floaters.push({ x: p.x, y: p.y - 30, text: '+1 POSTO', t: 1.2, color: '#7CF5C4' });
@@ -1407,7 +1411,7 @@ function drawBall(b, time) {
     ctx.lineWidth = 3; ctx.strokeStyle = `hsl(${(time * 60 + b.id * 18) % 360},90%,65%)`; ctx.stroke();
     ctx.font = `${Math.round(r * 1.1)}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.translate(x, y + r * 0.05); ctx.rotate(Math.sin(b.phase) * 0.2);
-    ctx.fillText(b.emoji, 0, 0);
+    ctx.fillStyle = '#000'; ctx.fillText(b.emoji, 0, 0);
     ctx.restore();
     return;
   }
@@ -1421,7 +1425,7 @@ function drawBall(b, time) {
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
     ctx.lineWidth = 4; ctx.strokeStyle = '#ffd23f'; ctx.stroke();
     ctx.font = `${Math.round(r * 1.05)}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(P.emoji, x, y + r * 0.06);
+    ctx.fillStyle = '#000'; ctx.fillText(P.emoji, x, y + r * 0.06);
     ctx.restore();
     text(P.name, x, y + r + 12, Math.max(10, FS * 0.7), '#ffffff');
     return;
@@ -1567,7 +1571,7 @@ function drawBonusBox() {
   const es = b.h * 0.62;
   ctx.font = `${Math.round(es)}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const pulse = 1 + 0.06 * Math.sin(performance.now() / 150);
-  ctx.translate(b.x + 12 + es / 2, b.y + b.h / 2 - 3); ctx.scale(pulse, pulse); ctx.fillText(emoji, 0, 0);
+  ctx.translate(b.x + 12 + es / 2, b.y + b.h / 2 - 3); ctx.scale(pulse, pulse); ctx.fillStyle = '#000'; ctx.fillText(emoji, 0, 0);
   ctx.restore();
   const tx = b.x + 24 + es, ts = Math.min(FS * 0.75, (b.w - es - 36) / 11);
   text('TROVA:', tx, b.y + b.h * 0.28, ts * 0.8, '#ffd23f', 'left', false);
@@ -1644,7 +1648,7 @@ function drawOverlay(time) {
     demo.forEach(([emoji], i) => {
       const bx = W / 2 + (i - 2) * br * 2.5, bb = by + Math.sin(performance.now() / 300 + i) * 6;
       ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(bx, bb, br, 0, 6.28); ctx.fill();
-      ctx.font = `${Math.round(br * 1.1)}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(emoji, bx, bb + 2);
+      ctx.font = `${Math.round(br * 1.1)}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#000'; ctx.fillText(emoji, bx, bb + 2);
     });
     const iy = by + br + s * 2.5;
     text('IL RIQUADRO IN ALTO TI DICE QUALE SFERA TROVARE', W / 2, iy, s * 0.75, '#ffffff');
@@ -1703,6 +1707,11 @@ function draw(time) {
   ctx.save();
   if (shake > 0) ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
   drawBackdrop(time);
+  // posti della fila a terra: cerchi vuoti, così si vede quanti ne restano
+  if (state === 'play' || state === 'pause' || state === 'over' || state === 'bonusIntro') {
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+    for (let i = landed.length; i < GROUND_SLOTS; i++) { const p = landedPos(i); ctx.beginPath(); ctx.arc(p.x, p.y, LR - 1, 0, 6.28); ctx.stroke(); }
+  }
   // sfere a terra: scivolano nella fila
   landed.forEach((l, i) => {
     const p = landedPos(i), e = 1 - Math.pow(1 - l.t, 3);
