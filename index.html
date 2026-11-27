@@ -200,7 +200,7 @@ function resize() {
   HUD_H = (COMPACT || H < 620) ? 36 : 96;
   if (oldW && typeof balls !== 'undefined') {
     const kx = W / oldW, ky = (H - GROUND_H) / oldGround;
-    for (const b of balls) { b.x *= kx; b.y *= ky; b.vy *= ky; if (b.g) b.g *= ky; b.vx = (b.vx || 0) * kx; b.r = b.kind === 'ball' ? radiusFor(b.size) : b.kind === 'mini' ? miniR() : bubbleR(); }
+    for (const b of balls) { b.x *= kx; b.y *= ky; b.vy *= ky; if (b.g) b.g *= ky; b.vx = (b.vx || 0) * kx; b.r = b.kind === 'ball' ? radiusFor(b.size) : b.kind === 'mini' ? miniR() : b.kind === 'power' ? BIG_R * 0.85 : bubbleR(); }
   }
 }
 addEventListener('resize', resize);
@@ -278,6 +278,11 @@ const sfx = {
   wrong: () => { tone(150, 0.2, 'sawtooth', 0.07); vibrate(40); },
   key: () => noise(0.02, 3000, 2, 0.3),
   combo: m => [659, 880, 1175, 1568].slice(0, m).forEach((f, i) => tone(f, 0.1, 'square', 0.05, i * 0.07)),
+  powerIn: () => [784, 988, 1175].forEach((f, i) => tone(f, 0.12, 'triangle', 0.06, i * 0.08)),
+  sword: () => { noise(0.35, 2500, 0.8, 0.5, 0, 'highpass'); tone(1400, 0.3, 'sawtooth', 0.04, 0, 900); },
+  slash: () => { noise(0.08, 4000, 1.5, 0.3, 0, 'highpass'); tone(R(1300, 1700), 0.06, 'square', 0.03, 0, -400); },
+  boom: () => { noise(0.9, 120, 0.7, 0.9, 0, 'lowpass'); tone(55, 0.7, 'sine', 0.25, 0, -30); vibrate([60, 40, 120]); },
+  broom: () => { noise(0.4, 1500, 0.6, 0.4); [523, 784, 1046].forEach((f, i) => tone(f, 0.1, 'triangle', 0.06, 0.1 + i * 0.07)); },
   free: () => { tone(523, 0.1, 'triangle', 0.08); tone(1046, 0.16, 'triangle', 0.08, 0.08); },
   over: () => { [400, 300, 200, 120].forEach((f, i) => tone(f, 0.3, 'sawtooth', 0.06, i * 0.22)); vibrate([80, 60, 200]); },
 };
@@ -362,7 +367,7 @@ function spawnDelay(n) {
 // 1 Salerno: solo dall'alto · 2 Mare: cannoncini dal basso · 3 Roma: più sfere piccole
 // 4 Montagna: cannoncini ai lati · 5 Luna: formazioni · 6 Giappone: più arcobaleno
 // 7 New York: tutto insieme · 8 Parigi: gran finale
-const NOVITA = { 2: 'ARRIVANO I CANNONCINI!', 3: 'PIU SFERE PICCOLE: MIRA!', 4: 'CANNONCINI ANCHE AI LATI!',
+const NOVITA = { 2: 'CANNONCINI E POTENZIAMENTI!', 3: 'PIU SFERE PICCOLE: MIRA!', 4: 'CANNONCINI ANCHE AI LATI!',
   5: 'ARRIVANO LE FORMAZIONI!', 6: 'PIU SFERE ARCOBALENO!', 7: 'TUTTO INSIEME!', 8: 'GRAN FINALE!' };
 const coin = () => Math.round(Math.random());
 // quante sfere escono insieme
@@ -392,6 +397,81 @@ let combo = 0, bestCombo = 0;
 const comboMult = () => combo >= 45 ? 4 : combo >= 25 ? 3 : combo >= 10 ? 2 : 1;
 // lanci programmati (formazioni)
 let queued = [];
+
+// =====================================================================
+//  POTENZIAMENTI (dal 2° livello) — arrivano quando la situazione si complica
+//  SPADA: per 10 secondi strisci il dito e le sfere toccate esplodono
+//  BOMBA: toccata, fa esplodere tutte le sfere in campo
+//  SCOPA: libera posti nella fila a terra (2, dal 6° livello 3)
+//  Scendono più lente; se cadono a terra spariscono senza entrare nella fila.
+// =====================================================================
+const POWERS = {
+  spada: { emoji: '⚔️', name: 'SPADA', color: '#7fd3ff' },
+  bomba: { emoji: '💣', name: 'BOMBA', color: '#ff7a59' },
+  scopa: { emoji: '🧹', name: 'SCOPA', color: '#7CF5C4' },
+};
+const POWER_GAP = 25;          // secondi minimi tra un potenziamento e l'altro
+const SWORD_TIME = 10;
+let powerCd = 0, swordT = 0, swordTrail = [], swordDown = false, swordLast = null, flashT = 0;
+const scopaCount = () => level >= 6 ? 3 : 2;
+function wantPower() {
+  if (level < 2 || powerCd < POWER_GAP || balls.some(b => b.kind === 'power') || swordT > 0) return false;
+  const inField = balls.filter(b => b.kind === 'ball').length;
+  return groundFill() >= 0.4 || inField >= 6;
+}
+function pickPower() {
+  // fila quasi piena: più probabile la scopa; tante sfere in campo: spada o bomba
+  if (!landed.length) return Math.random() < 0.5 ? 'spada' : 'bomba';
+  const pScopa = groundFill() >= 0.6 ? 0.6 : 0.2, x = Math.random();
+  return x < pScopa ? 'scopa' : x < pScopa + (1 - pScopa) / 2 ? 'spada' : 'bomba';
+}
+function spawnPower() {
+  const type = pickPower(), r = BIG_R * 0.85, gy = groundY();
+  balls.push({ kind: 'power', type, r, x: R(r + 10, W - r - 10), y: -r, vy: (gy) / (lifeBase() * 1.7), phase: R(0, 6.28), sway: 18, age: 0, hit: 0, color: POWERS[type].color });
+  powerCd = 0;
+  sfx.powerIn();
+}
+function usePower(b) {
+  balls.splice(balls.indexOf(b), 1);
+  const P = POWERS[b.type];
+  burst(b.x, b.y, P.color, 30, 300);
+  if (b.type === 'spada') {
+    swordT = SWORD_TIME; swordTrail = [];
+    banner = { text: 'SPADA!', sub: TOUCH ? 'STRISCIA IL DITO SULLE SFERE' : 'TIENI PREMUTO E STRISCIA SULLE SFERE', t: 1.6 };
+    sfx.sword();
+  } else if (b.type === 'bomba') {
+    flashT = 0.35; shake = Math.max(shake, 22);
+    sfx.boom();
+    for (const o of [...balls]) {
+      if (o.kind !== 'ball' && o.kind !== 'mini') continue;
+      pop(o, true);
+      if (state !== 'play' || mode !== 'normal') return;
+    }
+    floaters.push({ x: W / 2, y: H * 0.35, text: 'BOOM!', t: 1.2, color: '#ff7a59' });
+  } else {
+    const n = Math.min(scopaCount(), landed.length);
+    for (let i = 0; i < n; i++) {
+      const p = landedPos(landed.length - 1), l = landed.pop();
+      burst(p.x, p.y, l.color, 14, 240);
+    }
+    floaters.push({ x: W / 2, y: groundY() - 40, text: n ? `+${n} POSTI LIBERI` : 'FILA GIA VUOTA', t: 1.4, color: '#7CF5C4' });
+    sfx.broom();
+  }
+}
+// la spada: tutte le sfere vicine al tratto tra due punti del dito esplodono
+function swordSweep(x0, y0, x1, y1) {
+  swordTrail.push({ x: x1, y: y1, t: 0.25 });
+  const dx = x1 - x0, dy = y1 - y0, L2 = dx * dx + dy * dy || 1;
+  for (const b of [...balls]) {
+    if (b.kind !== 'ball' && b.kind !== 'mini' && b.kind !== 'power') continue;
+    const t = Math.max(0, Math.min(1, ((b.x - x0) * dx + (b.y - y0) * dy) / L2));
+    const d = Math.hypot(b.x - (x0 + dx * t), b.y - (y0 + dy * t));
+    if (d <= b.r + 8) {
+      if (b.kind === 'power') usePower(b); else { pop(b); sfx.slash(); }
+      if (state !== 'play' || mode !== 'normal') return;
+    }
+  }
+}
 function miniLife() { return Math.max(1.8, 3.2 - (level - 1) * 0.25); }
 function bonusTimeNext() { bonusCount++; const t = bonusTime(); bonusCount--; return t; }
 function bonusTime() { return Math.max(25, 50 - (bonusCount - 1) * 6); }
@@ -404,6 +484,7 @@ function newGame(startLv) {
   score = 0; displayScore = 0; level = 1; sub = 1; cleared = 0; poppedCount = 0; shake = 0;
   spawnTimer = 0.4; mode = 'normal'; bonusCount = 0; bonus = null; cannonFlash = {};
   waveT = 0; assist = 1; calmT = 0; combo = 0; bestCombo = 0; queued = [];
+  powerCd = 0; swordT = 0; swordTrail = []; flashT = 0;
   level = startLv || diff().start;
   banner = { text: `LIVELLO ${level}-1`, sub: startLv ? `RIPARTENZA - ${sceneNameFor(level)}` : `${diff().name} - ${sceneNameFor(level)}`, t: 2.4 };
   state = 'play';
@@ -506,7 +587,7 @@ function land(b) {
   if (landed.length > rowLayout().total) gameOver();
 }
 
-function pop(b) {
+function pop(b, noSplit = false) {
   balls.splice(balls.indexOf(b), 1);
   let pts;
   if (b.kind === 'mini') { pts = MINI_POINTS; sfx.mini(); }
@@ -530,7 +611,7 @@ function pop(b) {
     floaters.push({ x: p.x, y: p.y - 30, text: '+1 POSTO', t: 1.2, color: '#7CF5C4' });
     sfx.free();
   }
-  if (b.special) {
+  if (b.special && !noSplit) {
     // sfera speciale: si divide in sferette piccole e veloci che durano meno
     const n = splitCount(), sp = (280 + level * 30) * Math.min(W, H) / 700;
     for (let i = 0; i < n; i++) {
@@ -561,7 +642,7 @@ function bonusIntro() {
   landed.forEach((l, i) => { const p = landedPos(i); burst(p.x, p.y, l.color, 8, 160); });
   balls.forEach(b => burst(b.x, b.y, b.color, 8, 160));
   landed = []; balls = []; queued = [];
-  banner = null; introT = 0; state = 'bonusIntro';
+  banner = null; introT = 0; state = 'bonusIntro'; swordT = 0; swordTrail = [];
   sfx.level();
 }
 function goBonus() { if (introT < 0.8) return; state = 'play'; startBonus(); }   // breve attesa: evita di partire per sbaglio mentre si tocca
@@ -638,6 +719,7 @@ function tapAt(x, y, pad) {
     }
     return;
   }
+  if (b.kind === 'power') { usePower(b); return; }
   pop(b);
 }
 
@@ -651,7 +733,16 @@ canvas.addEventListener('pointerdown', e => {
   const p = pt(e);
   if (p.y < HUD_H || onPauseBtn(p.x, p.y)) { state = 'pause'; ignoreUp = true; return; }   // pulsante pausa o barra in alto
   tapAt(p.x, p.y, e.pointerType === 'mouse' ? 3 : 12);
+  swordDown = true; swordLast = p;
 });
+canvas.addEventListener('pointermove', e => {
+  if (!swordDown || state !== 'play' || mode !== 'normal' || swordT <= 0) { swordLast = pt(e); return; }
+  const p = pt(e);
+  if (swordLast) swordSweep(swordLast.x, swordLast.y, p.x, p.y);
+  swordLast = p;
+});
+addEventListener('pointerup', () => { swordDown = false; swordLast = null; });
+addEventListener('pointercancel', () => { swordDown = false; swordLast = null; });
 canvas.addEventListener('pointerup', e => {
   if (ignoreUp) { ignoreUp = false; return; }
   if (state === 'title') { const r1 = canvas.getBoundingClientRect(), di = diffAt(e.clientX - r1.left, e.clientY - r1.top); if (di >= 0) { setDiff(di); return; } }
@@ -755,6 +846,8 @@ function update(dt) {
   bg.sunC = lerpC(bg.sunC, T.sunC, k);
   ['sunY', 'sunA', 'moon', 'stars', 'win'].forEach(key => bg[key] = lerp(bg[key], T[key], k));
 
+  swordTrail.forEach(q => q.t -= dt); swordTrail = swordTrail.filter(q => q.t > 0);
+  flashT = Math.max(0, flashT - dt);
   particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 400 * dt; p.life -= dt; });
   particles = particles.filter(p => p.life > 0);
   floaters.forEach(f => { f.y -= 50 * dt; f.t -= dt; });
@@ -793,9 +886,13 @@ function update(dt) {
     if (spawnTimer <= 0) spawnTimer = spawnDelay(spawnGroup());
   }
   for (const q of [...queued]) { q.t -= dt; if (q.t <= 0) { queued.splice(queued.indexOf(q), 1); q.fn(); } }
-  // aiuto invisibile
+  // potenziamenti
+  powerCd += dt;
+  if (swordT > 0) { swordT = Math.max(0, swordT - dt); if (swordT === 0) floaters.push({ x: W / 2, y: H * 0.3, text: 'SPADA FINITA', t: 1, color: '#7fd3ff' }); }
+  if (wantPower()) spawnPower();
+  // aiuto invisibile (più leggero: ora ci sono i potenziamenti)
   calmT += dt;
-  const want = groundFill() >= 0.6 ? 0.85 : calmT > 20 ? 1.06 : 1;
+  const want = groundFill() >= 0.6 ? 0.9 : calmT > 20 ? 1.06 : 1;
   assist += (want - assist) * Math.min(1, dt * 0.8);
   for (const k in cannonFlash) cannonFlash[k] = Math.max(0, cannonFlash[k] - dt);
   const scale = Math.min(W, H) / 700;
@@ -812,6 +909,11 @@ function update(dt) {
       b.y += b.vy * dt;
       b.x = clamp(b.x + Math.cos(b.age * 1.6 + b.phase) * b.sway * dt, b.r, W - b.r);
       if (b.y + b.r >= gy) { land(b); if (state !== 'play') return; }
+    } else if (b.kind === 'power') {
+      // scende piano; se tocca terra sparisce senza entrare nella fila
+      b.y += b.vy * dt;
+      b.x = clamp(b.x + Math.cos(b.age * 1.6 + b.phase) * b.sway * dt, b.r, W - b.r);
+      if (b.y + b.r >= gy) { balls.splice(balls.indexOf(b), 1); burst(b.x, gy - 4, '#dddddd', 10, 120); }
     } else if (b.kind === 'mini') {
       if (!b.falling && b.age >= b.life) { b.falling = true; b.vx *= 0.2; b.vy = 200 * scale; }
       if (b.falling) b.vy += 1800 * scale * dt;
@@ -1309,6 +1411,21 @@ function drawBall(b, time) {
     ctx.restore();
     return;
   }
+  if (b.kind === 'power') {
+    const P = POWERS[b.type], pulse = 1 + 0.08 * Math.sin(time * 8);
+    const halo = ctx.createRadialGradient(x, y, r * 0.6, x, y, r * 1.9 * pulse);
+    halo.addColorStop(0, P.color + 'aa'); halo.addColorStop(1, P.color + '00');
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(x, y, r * 1.9 * pulse, 0, 6.28); ctx.fill();
+    const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#dfe6f0');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = '#ffd23f'; ctx.stroke();
+    ctx.font = `${Math.round(r * 1.05)}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(P.emoji, x, y + r * 0.06);
+    ctx.restore();
+    text(P.name, x, y + r + 12, Math.max(10, FS * 0.7), '#ffffff');
+    return;
+  }
   ctx.shadowColor = b.special ? '#ffffff' : b.color;
   ctx.shadowBlur = 8 + bg.stars * 14;
   let fill;
@@ -1596,6 +1713,17 @@ function draw(time) {
   });
   if ((state === 'play' || state === 'pause' || state === 'over') && mode === 'normal') drawCannons();
   if (state !== 'title' && state !== 'board') balls.forEach(b => drawBall(b, time));
+  if (swordTrail.length > 1) {
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (let i = 1; i < swordTrail.length; i++) {
+      const a = swordTrail[i - 1], q = swordTrail[i], k = q.t / 0.25;
+      ctx.strokeStyle = `rgba(127,211,255,${(k * 0.6).toFixed(2)})`; ctx.lineWidth = 16 * k;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${k.toFixed(2)})`; ctx.lineWidth = 5 * k;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+    }
+    ctx.restore();
+  }
   particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); });
   ctx.globalAlpha = 1;
   floaters.forEach(f => { ctx.globalAlpha = Math.max(0, Math.min(1, f.t)); text(f.text, f.x, f.y, FS * 1.1, f.color); });
@@ -1603,9 +1731,18 @@ function draw(time) {
   if (state === 'play' || state === 'pause' || state === 'over' || state === 'bonusIntro') {
     drawHUD();
     if (mode === 'bonus' && bonus) drawBonusBox();
+    if (swordT > 0 && mode === 'normal') {
+      // tempo rimasto alla spada
+      const bw = Math.min(260, W * 0.6), bx = W / 2 - bw / 2, by = HUD_H + 10, k = swordT / SWORD_TIME;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(bx - 4, by - 4, bw + 8, 30, 10); ctx.fill();
+      text(`SPADA ${Math.ceil(swordT)}S`, W / 2, by + 7, Math.max(10, FS * 0.6), '#7fd3ff');
+      ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(bx, by + 15, bw, 6);
+      ctx.fillStyle = k > 0.3 ? '#7fd3ff' : (Math.sin(performance.now() / 80) > 0 ? '#ff3b3b' : '#7fd3ff'); ctx.fillRect(bx, by + 15, bw * k, 6);
+    }
     drawBanner();
   }
   ctx.restore();
+  if (flashT > 0) { ctx.fillStyle = `rgba(255,240,200,${(flashT / 0.35 * 0.7).toFixed(2)})`; ctx.fillRect(0, 0, W, H); }
   drawOverlay(time);
   drawPauseBtn();
 }
