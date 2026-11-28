@@ -205,7 +205,7 @@ function resize() {
   HUD_H = (COMPACT || H < 620) ? 36 : 96;
   if (oldW && typeof balls !== 'undefined') {
     const kx = W / oldW, ky = (H - GROUND_H) / oldGround;
-    for (const b of balls) { b.x *= kx; b.y *= ky; b.vy *= ky; if (b.g) b.g *= ky; b.vx = (b.vx || 0) * kx; b.r = b.kind === 'ball' ? radiusFor(b.size) : b.kind === 'mini' ? miniR() : b.kind === 'power' ? BIG_R * 0.85 : b.kind === 'skull' ? BIG_R * 0.8 : bubbleR(); }
+    for (const b of balls) { b.x *= kx; b.y *= ky; b.vy *= ky; if (b.g) b.g *= ky; b.vx = (b.vx || 0) * kx; b.r = b.kind === 'ball' ? radiusFor(b.size) : b.kind === 'mini' ? miniR() : b.kind === 'power' ? BIG_R * 0.85 : b.kind === 'skull' ? BIG_R * 0.8 : b.kind === 'pack' ? miniR() * 1.3 : bubbleR(); }
   }
 }
 addEventListener('resize', resize);
@@ -292,6 +292,8 @@ const sfx = {
   skullIn: () => { tone(110, 0.4, 'sawtooth', 0.05, 0, -20); tone(104, 0.4, 'sawtooth', 0.05, 0.05, -20); },
   skull: () => { [330, 262, 196, 131, 98].forEach((f, i) => tone(f, 0.25, 'sawtooth', 0.07, i * 0.08)); noise(0.6, 150, 0.7, 0.6, 0, 'lowpass'); vibrate([100, 50, 200]); },
   surge: () => [392, 523, 659, 784, 1046].forEach((f, i) => tone(f, 0.08, 'triangle', 0.05, i * 0.05)),
+  van: () => { tone(392, 0.12, 'square', 0.05); tone(392, 0.12, 'square', 0.05, 0.18); noise(0.3, 400, 0.7, 0.4, 0.05, 'lowpass'); },
+  pack: () => { noise(0.08, 600, 1, 0.4, 0, 'lowpass'); tone(R(600, 800), 0.08, 'triangle', 0.06, 0.02, 200); },
   pizza: () => { noise(0.18, 900, 0.8, 0.5); [523, 659, 784].forEach((f, i) => tone(f, 0.1, 'triangle', 0.06, i * 0.06)); },
   slice: () => { tone(R(700, 950), 0.07, 'triangle', 0.05, 0, 300); noise(0.05, 2000, 1.5, 0.25); },
   free: () => { tone(523, 0.1, 'triangle', 0.08); tone(1046, 0.16, 'triangle', 0.08, 0.08); },
@@ -416,6 +418,16 @@ let skullCd = 0, skullSeen = false;
 const PIZZA_CHANCE = 0.06, SLICE_POINTS = 10;
 const pizzaSlices = () => level <= 3 ? 4 : level <= 6 ? 6 : 8;
 let pizzaSeen = false;
+
+// =====================================================================
+//  FURGONCINO DELLE CONSEGNE — dal primo livello ogni tanto scende un furgoncino.
+//  Toccato, scarica una pioggia di pacchi (3, poi 4, poi 5) che cadono piano:
+//  ogni pacco preso vale punti, quelli che arrivano a terra spariscono senza danni.
+//  Un furgoncino non toccato cade a terra come una sfera.
+// =====================================================================
+const VAN_CHANCE = 0.04, PACK_POINTS = 15;
+const vanPacks = () => level <= 3 ? 3 : level <= 6 ? 4 : 5;
+let vanSeen = false;
 function wantSkull() {
   return level >= 2 && skullCd >= SKULL_GAP && !balls.some(b => b.kind === 'skull') && balls.filter(b => b.kind === 'ball').length >= 6;
 }
@@ -511,7 +523,7 @@ function usePower(b) {
     flashT = 0.35; shake = Math.max(shake, 22);
     sfx.boom();
     for (const o of [...balls]) {
-      if (o.kind !== 'ball' && o.kind !== 'mini') continue;
+      if (o.kind !== 'ball' && o.kind !== 'mini' && o.kind !== 'pack') continue;
       pop(o, true);
       if (state !== 'play' || mode !== 'normal') return;
     }
@@ -535,7 +547,7 @@ function swordSweep(x0, y0, x1, y1) {
   swordTrail.push({ x: x1, y: y1, t: 0.25 });
   const dx = x1 - x0, dy = y1 - y0, L2 = dx * dx + dy * dy || 1;
   for (const b of [...balls]) {
-    if (b.kind !== 'ball' && b.kind !== 'mini' && b.kind !== 'power') continue;
+    if (b.kind !== 'ball' && b.kind !== 'mini' && b.kind !== 'power' && b.kind !== 'pack') continue;
     const t = Math.max(0, Math.min(1, ((b.x - x0) * dx + (b.y - y0) * dy) / L2));
     const d = Math.hypot(b.x - (x0 + dx * t), b.y - (y0 + dy * t));
     if (d <= b.r + 8) {
@@ -558,7 +570,7 @@ function newGame(startLv) {
   spawnTimer = 0.4; mode = 'normal'; bonusCount = 0; bonus = null; cannonFlash = {};
   waveT = 0; assist = 1; calmT = 0; combo = 0; bestCombo = 0; queued = [];
   powerCd = 0; swordT = 0; swordTrail = []; flashT = 0; slowT = 0; slowK = 1;
-  skullCd = 0; skullSeen = false; pizzaSeen = false; redT = 0; surgeNext = 20; surgeT = -1;
+  skullCd = 0; skullSeen = false; pizzaSeen = false; vanSeen = false; redT = 0; surgeNext = 20; surgeT = -1;
   level = startLv || diff().start;
   banner = { text: `LIVELLO ${level}-1`, sub: startLv ? `RIPARTENZA - ${sceneNameFor(level)}` : `${diff().name} - ${sceneNameFor(level)}`, t: 2.4 };
   state = 'play';
@@ -599,15 +611,20 @@ function spawnFormation() {
 }
 function spawnBall(src = 'top', o = {}) {
   const pizza = o.size === undefined && Math.random() < PIZZA_CHANCE;    // le pizze sono sempre grandi
-  const size = pizza ? 0 : (o.size ?? pickSize());
+  const van = !pizza && o.size === undefined && Math.random() < VAN_CHANCE;  // anche i furgoncini
+  const size = (pizza || van) ? 0 : (o.size ?? pickSize());
   const r = radiusFor(size);
-  const special = !pizza && size !== 2 && Math.random() < specialChance();
+  const special = !pizza && !van && size !== 2 && Math.random() < specialChance();
   const life = lifeFor() * R(0.85, 1.15) * (size === 2 ? 0.9 : 1);
   const b = { kind: 'ball', size, r, special, phase: R(0, 6.28), sway: R(10, 35), age: 0,
     color: BALL_COLORS[Math.floor(Math.random() * BALL_COLORS.length)], hit: 0 };
   if (pizza) {
     Object.assign(b, { pizza: true, color: '#f2b05e' });
     if (!pizzaSeen) { pizzaSeen = true; if (!banner) banner = { text: 'PIZZA!', sub: 'TOCCALA E PRENDI GLI SPICCHI', t: 1.8 }; }
+  }
+  if (van) {
+    Object.assign(b, { van: true, color: '#d9d9d9' });
+    if (!vanSeen) { vanSeen = true; if (!banner) banner = { text: 'FURGONCINO!', sub: 'TOCCALO E PRENDI I PACCHI', t: 1.8 }; }
   }
   const gy = groundY(), top = HUD_H + r;
   if (src === 'top') {
@@ -673,7 +690,8 @@ function land(b) {
 function pop(b, noSplit = false) {
   balls.splice(balls.indexOf(b), 1);
   let pts;
-  if (b.slice) { pts = SLICE_POINTS; sfx.slice(); }
+  if (b.kind === 'pack') { pts = PACK_POINTS; sfx.pack(); }
+  else if (b.slice) { pts = SLICE_POINTS; sfx.slice(); }
   else if (b.kind === 'mini') { pts = MINI_POINTS; sfx.mini(); }
   else if (b.special) { pts = SPECIAL_POINTS; sfx.special(); }
   else { pts = POINTS[b.size]; sfx.pop(b.size); }
@@ -694,6 +712,16 @@ function pop(b, noSplit = false) {
     burst(p.x, p.y, l.color, 16, 220);
     floaters.push({ x: p.x, y: p.y - 30, text: '+1 POSTO', t: 1.2, color: '#7CF5C4' });
     sfx.free();
+  }
+  if (b.van && !noSplit) {
+    // furgoncino: scarica i pacchi, che cadono piano un po' sparpagliati
+    const n = vanPacks(), scale = Math.min(W, H) / 700;
+    sfx.van();
+    for (let i = 0; i < n; i++) {
+      const k = n === 1 ? 0 : i / (n - 1) - 0.5;
+      balls.push({ kind: 'pack', r: miniR() * 1.3, x: clamp(b.x + k * b.r * 2.4, 20, W - 20), y: b.y - R(0, b.r * 0.6),
+        vx: k * 140 * scale, vy: -R(160, 260) * scale, phase: R(0, 6.28), age: 0, hit: 0, color: '#c8904a' });
+    }
   }
   if (b.pizza && !noSplit) {
     // pizza: si apre a spicchi che volano via in tutte le direzioni
@@ -1021,6 +1049,12 @@ function update(dt) {
       b.y += b.vy * dt;
       b.x = clamp(b.x + Math.cos(b.age * 1.6 + b.phase) * b.sway * dt, b.r, W - b.r);
       if (b.y + b.r >= gy) { land(b); if (state !== 'play') return; }
+    } else if (b.kind === 'pack') {
+      b.vy = Math.min(b.vy + 520 * scale * dt, 150 * scale);      // cadono piano, come con un paracadute
+      b.vx *= Math.pow(0.4, dt);
+      b.x = clamp(b.x + b.vx * dt + Math.sin(b.age * 3 + b.phase) * 12 * dt, b.r, W - b.r);
+      b.y += b.vy * dt;
+      if (b.y + b.r >= gy) { balls.splice(balls.indexOf(b), 1); burst(b.x, gy - 4, '#c8904a', 10, 120); }
     } else if (b.kind === 'power' || b.kind === 'skull') {
       // scende piano; se tocca terra sparisce senza entrare nella fila
       b.y += b.vy * dt;
@@ -1520,6 +1554,20 @@ function drawBall(b, time) {
     ctx.font = `${Math.round(r * 1.1)}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.translate(x, y + r * 0.05); ctx.rotate(Math.sin(b.phase) * 0.2);
     ctx.fillStyle = '#000'; ctx.fillText(b.emoji, 0, 0);
+    ctx.restore();
+    return;
+  }
+  if (b.van || b.kind === 'pack') {
+    // furgoncino o pacco: le emoji del telefono, con un'ombra; il furgoncino oscilla un po'
+    ctx.translate(x, y);
+    ctx.rotate(b.van ? Math.sin(b.age * 4 + b.phase) * 0.12 : Math.sin(b.age * 3 + b.phase) * 0.25);
+    if (b.van) {
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.28); ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = '#ffb000'; ctx.stroke();
+    }
+    ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 6;
+    ctx.font = `${Math.round(r * (b.van ? 1.35 : 1.6))}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#000'; ctx.fillText(b.van ? '🚚' : '📦', 0, r * 0.06);
     ctx.restore();
     return;
   }

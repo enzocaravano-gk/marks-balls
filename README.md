@@ -16,6 +16,7 @@ Terzo gioco della serie di [Word Rain](https://github.com/enzocaravano-gk/word-r
 - Teschio: quando le sfere sono tante può scendere una sfera nera col teschio. Non toccarla: farebbe piombare a terra tutte le sfere sullo schermo (se la lasci cadere sparisce)
 - Pioggia di sfere: ogni 30-40 secondi, per 8 secondi, arrivano molte più sfere ma più lente
 - Pizze (dal primo livello): toccata, la pizza si divide in spicchi (4, poi 6, poi 8) che valgono 10 punti l'uno; gli spicchi che cadono spariscono senza danni
+- Furgoncino delle consegne (dal primo livello): toccato, scarica 3-5 pacchi che cadono piano; ogni pacco preso vale 15 punti, quelli persi spariscono senza danni
 - Presa "al volo" vicino a terra: +5 punti. Se la fila è quasi piena le sfere rallentano un po'
 - Dopo il game over puoi ripartire dal livello che avevi raggiunto (pulsante nella classifica)
 - Pausa: tocca la barra in alto (telefono) oppure spazio / ESC (computer)
