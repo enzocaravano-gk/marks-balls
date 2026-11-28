@@ -7,7 +7,7 @@ Terzo gioco della serie di [Word Rain](https://github.com/enzocaravano-gk/word-r
 - Le sfere speciali con la stella si dividono in sferette piccole e veloci (15 punti l'una) che durano poco
 - Ogni livello ha il suo sfondo illustrato in pixel art (cartella `sfondi/`): Salerno, Mare, Roma, Montagna, Luna, Giappone, New York, Parigi; poi si ricomincia
 - Ogni livello ha 4 sottolivelli: giorno, tramonto, sera, notte (lo sfondo si scurisce e compaiono le stelle)
-- Dopo ogni livello c'è un bonus: 20 bolle con animali e oggetti rimbalzano sullo schermo, il riquadro in alto dice quale trovare, entro un tempo massimo. Il tempo è di 35 secondi e cala a ogni bonus (minimo 20). Sfera sbagliata = 2 secondi e 10 punti in meno
+- Dopo ogni livello c'è un bonus: 20 bolle con animali e oggetti rimbalzano sullo schermo, il riquadro in alto dice quale trovare, entro un tempo massimo. Il tempo è di 30 secondi da Principiante, 25 da Intermedio, 20 da Master. Sfera sbagliata = 2 secondi e 10 punti in meno
 - Classifica arcade con 3 iniziali, salvata nel browser
 - Ogni livello porta una novità: cannoncini dal basso (2), più sfere piccole (3), cannoncini ai lati (4), formazioni (5), più arcobaleno (6), tutto insieme (7), gran finale (8)
 - Difficoltà "a dente di sega": i sottolivelli salgono, il livello dopo riparte un po' più calmo; dentro ogni sottolivello si alternano onde e brevi respiri

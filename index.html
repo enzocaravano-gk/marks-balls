@@ -307,8 +307,8 @@ const qualifies = s => s > 0 && (highscores.length < HS_MAX || s > highscores[hi
 // ---------- difficoltà: Principiante / Intermedio / Master ----------
 const DIFFS = [
   { key: 'P', name: 'PRINCIPIANTE', start: 1, mult: 1, speed: 0.85 },   // un po' più lento
-  { key: 'I', name: 'INTERMEDIO', start: 3, mult: 1.5, speed: 1 },
-  { key: 'M', name: 'MASTER', start: 5, mult: 2, speed: 1 },
+  { key: 'I', name: 'INTERMEDIO', start: 3, mult: 1.5, speed: 0.92 },
+  { key: 'M', name: 'MASTER', start: 5, mult: 2, speed: 0.88 },        // complicato ma non impossibile: parte dal 5° livello, un po' più lento
 ];
 const DIFF_KEY = HS_KEY + '_difficolta';
 let diffIdx = (() => { try { const v = localStorage.getItem(DIFF_KEY); return v === null ? 0 : Math.max(0, Math.min(2, +v)); } catch (e) { return 0; } })();
@@ -535,8 +535,8 @@ function swordSweep(x0, y0, x1, y1) {
 }
 function miniLife() { return Math.max(1.8, 3.2 - (level - 1) * 0.25); }
 function bonusTimeNext() { bonusCount++; const t = bonusTime(); bonusCount--; return t; }
-// bonus più corto: 35 secondi il primo, poi 4 in meno ogni volta (minimo 20)
-function bonusTime() { return Math.max(20, 35 - (bonusCount - 1) * 4); }
+// durata del bonus secondo la difficoltà: Principiante 30 s, Intermedio 25 s, Master 20 s
+function bonusTime() { return [30, 25, 20][diffIdx] || 30; }
 // nel bonus la difficoltà è riconoscere e cercare la sfera: le bolle si muovono un po' più piano (-20%)
 const BONUS_SPEED_MULT = 0.8;
 function bonusSpeed() { return (120 + (bonusCount - 1) * 40) * Math.min(W, H) / 700 * BONUS_SPEED_MULT; }
