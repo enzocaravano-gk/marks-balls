@@ -46,6 +46,7 @@ const MINI_POINTS = 15;              // sferette nate da una sfera speciale
 const SPECIAL_POINTS = 10;
 const BONUS_POINTS = 20;
 const BONUS_PERFECT = 300;
+const BONUS_WRONG_POINTS = 10;         // punti tolti se tocchi la sfera sbagliata nel bonus
 const BONUS_WRONG_PENALTY = 2;       // secondi tolti se tocchi la sfera sbagliata nel bonus
 
 const qs = new URLSearchParams(location.search);
@@ -534,7 +535,8 @@ function swordSweep(x0, y0, x1, y1) {
 }
 function miniLife() { return Math.max(1.8, 3.2 - (level - 1) * 0.25); }
 function bonusTimeNext() { bonusCount++; const t = bonusTime(); bonusCount--; return t; }
-function bonusTime() { return Math.max(25, 50 - (bonusCount - 1) * 6); }
+// bonus più corto: 35 secondi il primo, poi 4 in meno ogni volta (minimo 20)
+function bonusTime() { return Math.max(20, 35 - (bonusCount - 1) * 4); }
 // nel bonus la difficoltà è riconoscere e cercare la sfera: le bolle si muovono un po' più piano (-20%)
 const BONUS_SPEED_MULT = 0.8;
 function bonusSpeed() { return (120 + (bonusCount - 1) * 40) * Math.min(W, H) / 700 * BONUS_SPEED_MULT; }
@@ -777,7 +779,9 @@ function tapAt(x, y, pad) {
       if (bonus.idx >= bonus.order.length) endBonus();
     } else {
       b.hit = 0.3; bonus.time = Math.max(0, bonus.time - BONUS_WRONG_PENALTY); bonus.flash = 0.4;
-      floaters.push({ x: b.x, y: b.y, text: `-${BONUS_WRONG_PENALTY}S`, t: 0.8, color: '#ff5050' });
+      const lost = Math.min(score, withDiff(BONUS_WRONG_POINTS));
+      score -= lost; displayScore = Math.min(displayScore, score);
+      floaters.push({ x: b.x, y: b.y, text: `-${BONUS_WRONG_PENALTY}S -${lost}`, t: 0.9, color: '#ff5050' });
       sfx.wrong(); shake = Math.max(shake, 4);
     }
     return;
@@ -1745,7 +1749,7 @@ function drawOverlay(time) {
     });
     const iy = tightUI() ? y + s * 13 : by + br + s * 2.5;
     text('IL RIQUADRO IN ALTO TI DICE QUALE SFERA TROVARE', W / 2, iy, s * 0.75, '#ffffff');
-    text(`HAI ${bonusTimeNext()} SECONDI - SFERA SBAGLIATA = -${BONUS_WRONG_PENALTY} SECONDI`, W / 2, iy + s * 1.8, s * 0.75, '#ff8a8a');
+    text(`HAI ${bonusTimeNext()} SECONDI - SFERA SBAGLIATA = -${BONUS_WRONG_PENALTY} SECONDI E -${withDiff(BONUS_WRONG_POINTS)} PUNTI`, W / 2, iy + s * 1.8, s * 0.75, '#ff8a8a');
     text(`TROVALE TUTTE: +${withDiff(BONUS_PERFECT)} PUNTI`, W / 2, iy + s * 3.6, s * 0.75, '#ffe066');
     if (introT > 0.8 && blinkOn()) text(TOUCH ? 'TOCCA PER INIZIARE' : 'CLIC O INVIO PER INIZIARE', W / 2, iy + s * 7, s * 1.2, '#ff8fd8');
   }
